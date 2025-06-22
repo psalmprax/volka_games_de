@@ -1,0 +1,11 @@
+# Example terraform.tfvars - Copy to terraform.tfvars and fill in your values
+# Do NOT commit terraform.tfvars with sensitive data.
+
+aws_region = "eu-central-1"
+project_name = "volka-mktg-pipe-dev"
+
+# Ensure this S3 bucket name is globally unique.
+# You might want to append a random suffix or use your AWS account ID.
+s3_bucket_name = "volka-mktg-pipeline-data-your-unique-suffix"
+
+# db_password = "aVeryStrongPassword" # It's better to manage this via Secrets Manager directly or generate it.
