@@ -37,7 +37,7 @@ override.tf.json
 # dbt
 dbt_project/target/
 dbt_project/logs/
-# dbt_project/dbt_packages/
+dbt_project/dbt_packages/
 
 # IDE / OS specific
 .vscode/
