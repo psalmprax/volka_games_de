@@ -23,6 +23,11 @@ instance/
 *.DS_Store
 .env # Contains secrets, should never be committed. Use .env.encrypted instead.
 
+# --- Virtual Environments ---
+venv/
+.venv/
+venv_*/
+
 # --- Terraform ---
 .terraform/
 *.tfstate
