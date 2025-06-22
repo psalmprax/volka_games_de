@@ -1,23 +1,17 @@
 import os
 import requests
 import pandas as pd
-import json
 import psycopg2
 from psycopg2.extras import execute_values
 from datetime import date, timedelta, datetime
-import numpy as np # Added for np.inf, np.nan, np.isinf
+import numpy as np
 import logging
 from typing import List, Dict, Any, Optional
-import pandas.io.sql
 from decimal import Decimal, ROUND_HALF_UP
-import time # for sleep in fetch_data_from_api
+import time
 
 # Assuming aws_utils.py is in a 'utils' subdirectory relative to this script
-try:
-    from .utils.aws_utils import get_api_key_from_secret
-except ImportError:
-    # Fallback for direct execution or if utils is a sibling (adjust as needed for your execution context)
-    from utils.aws_utils import get_api_key_from_secret
+from .utils.aws_utils import get_api_key_from_secret, get_secret
 
 # --- Configuration ---
 API_BASE_URL = "https://api.sdetest.volka.team"
@@ -34,7 +28,24 @@ logger = logging.getLogger(__name__)
 def fetch_data_from_api(api_key_header: dict, period_from: str, period_to: str,
                         lod: str = 'a', lifedays: str = '1,3,7,14',
                         retries: int = 3, backoff_factor: float = 0.5) -> Optional[List[Dict[str, Any]]]:
-    """Fetches data from the Volka SDE Test API."""
+    """Fetches data from the API with a robust retry mechanism.
+
+    This function handles transient network errors, server-side issues (5xx), and
+    rate limiting (429) by using an exponential backoff retry strategy. A 404
+    (Not Found) status is treated as a successful call that simply returned no data.
+
+    Args:
+        api_key_header: The authorization header containing the API key.
+        period_from: The start date of the reporting period (YYYY-MM-DD).
+        period_to: The end date of the reporting period (YYYY-MM-DD).
+        lod, lifedays: API-specific parameters for data granularity.
+        retries: The maximum number of retry attempts.
+        backoff_factor: The base factor for calculating sleep time between retries.
+
+    Returns:
+        A list of dictionaries representing the raw data, an empty list if no data
+        is found (404), or None if the request ultimately fails after all retries.
+    """
     url = f"{API_BASE_URL}{API_ENDPOINT}"
     params = {
         "lod": lod,
@@ -51,12 +62,12 @@ def fetch_data_from_api(api_key_header: dict, period_from: str, period_to: str,
             try:
                 return response.json()
             except requests.exceptions.JSONDecodeError:
-                logger.error(f"Failed to decode JSON from API response (attempt {attempt + 1}/{retries}). Response text: {response.text[:500]}")
-                # This is a server-side issue, so we let the retry mechanism handle it.
+                logger.error(f"API returned non-JSON response (attempt {attempt + 1}/{retries}). Response text: {response.text[:500]}")
+                # This is treated as a server-side issue, allowing the retry mechanism to handle it.
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP error fetching API data (attempt {attempt + 1}/{retries}): {e.response.status_code} - {e.response.text}")
-            if e.response.status_code == 404: # No data found
-                logger.info(f"No data found (404) for period {period_from} to {period_to}. Returning empty list.")
+            if e.response.status_code == 404: # A 404 indicates no data for the period, which is not an error.
+                logger.info(f"API returned 404 (No Data Found) for period {period_from} to {period_to}. Returning empty list.")
                 return [] 
             if e.response.status_code < 500 and e.response.status_code != 429: 
                 break 
@@ -74,7 +85,21 @@ def fetch_data_from_api(api_key_header: dict, period_from: str, period_to: str,
 
 
 def transform_data(api_data: List[Dict[str, Any]]) -> pd.DataFrame:
-    """Transforms raw API data into a structured DataFrame."""
+    """Transforms raw API data into a structured and cleaned DataFrame.
+
+    This function performs several key transformations:
+    - Unnests the 'metrics' list into distinct columns for each lifeday (1d, 3d, 7d, 14d).
+    - Converts monetary values (cost, cpc, revenue) to cents (integers) to prevent
+      floating-point inaccuracies during calculations.
+    - Enforces consistent, nullable data types for all numeric columns.
+    - Cleans data by handling nulls, infinities, and negative values in key metrics.
+
+    Args:
+        api_data: A list of dictionaries, with each dictionary being a raw record from the API.
+
+    Returns:
+        A pandas DataFrame with cleaned, structured, and consistently typed data.
+    """
     if not api_data:
         return pd.DataFrame()
 
@@ -84,7 +109,7 @@ def transform_data(api_data: List[Dict[str, Any]]) -> pd.DataFrame:
         'players_1d', 'payers_1d', 'payments_1d', 'revenue_1d_cents',
         'players_3d', 'payers_3d', 'payments_3d', 'revenue_3d_cents',
         'players_7d', 'payers_7d', 'payments_7d', 'revenue_7d_cents',
-        'players_14d', 'payers_14d', 'payments_14d', 'revenue_14d_cents',
+        'players_14d', 'payers_14d', 'payments_14d', 'revenue_14d_cents', # Note: spend_cents is handled via default
         'ctr', 'cr' # CTR and CR should be >= 0
     ]
 
@@ -129,11 +154,10 @@ def transform_data(api_data: List[Dict[str, Any]]) -> pd.DataFrame:
     df = pd.DataFrame(processed_records)
     
     if not df.empty:
-        # The 'is_current' column is initialized with Python booleans, which pandas correctly
-        # handles. Explicit casting is not necessary as we no longer rely on pandas schema inference.
+        # Standardize date column to datetime.date objects for database compatibility.
         df['campaigns_execution_date'] = pd.to_datetime(df['campaigns_execution_date']).dt.date
 
-        # Define columns and their target dtypes for Pandas
+        # Define columns and their target dtypes for Pandas.
         # Using nullable types (Int64, Float64) to handle potential NaNs/None
         column_dtypes = {
             'spend_cents': 'Int64', 'impressions': 'Int64', 'clicks': 'Int64',
@@ -150,34 +174,34 @@ def transform_data(api_data: List[Dict[str, Any]]) -> pd.DataFrame:
                  logger.warning(f"Column '{col}' not found in DataFrame for type casting. Skipping.")
                  continue
 
-            # Step 1: Coerce to numeric, turning errors into NaN
+            # Robustly convert columns to their target numeric types, handling data quality issues.
             s_numeric = pd.to_numeric(df[col], errors='coerce')
 
-            # Step 2: Handle infinities (relevant for float types)
-            if pd.api.types.is_float_dtype(s_numeric.dtype):
+            # Replace infinite values (e.g., from division by zero) with NaN.
+            if pd.api.types.is_float_dtype(s_numeric.dtype): # Check only applies to float columns
                 if np.isinf(s_numeric.to_numpy()).any(): # Use .to_numpy() for reliable check on Series with NAs
                     logger.warning(f"Column '{col}' contains infinity values. Replacing with NaN.")
                     s_numeric = s_numeric.replace([np.inf, -np.inf], np.nan) # np.nan will be converted to pd.NA by Int64
 
-            # Step 3: Handle negative values for specified columns
+            # Ensure key metrics are non-negative, replacing negative values with 0.
             if col in NON_NEGATIVE_COLS:
                  negative_count = (s_numeric < 0).sum()
                  if negative_count > 0:
                      logger.warning(f"Column '{col}' contains {negative_count} negative values. Replacing with 0.")
-                     # Replace negative values with 0, keep NaN/NA as they are
                      s_numeric = s_numeric.apply(lambda x: max(x, 0) if pd.notna(x) else x)
 
-            # Step 4: Cast to the target nullable dtype
+            # Cast to the final target nullable dtype (e.g., 'Int64').
             try:
                 df[col] = s_numeric.astype(dtype)
             except Exception as e:
                 logger.error(f"Failed to cast column '{col}' to {dtype}. Error: {e}. Filling with NA.")
                 df[col] = pd.Series([pd.NA] * len(df), dtype=dtype) # Fallback: fill with NA
 
-        # After all conversions, fill any remaining NAs in numeric columns with 0
-        # This ensures dbt's 'numeric' type tests pass even if original data was missing/non-numeric
+        # Business Decision: After all conversions, fill any remaining NAs in numeric
+        # columns with 0. This ensures that downstream analytics and database
+        # constraints (e.g., NOT NULL) are met.
         df[list(column_dtypes.keys())] = df[list(column_dtypes.keys())].fillna(0)
-
+        # Ensure 'ad_name' has a consistent default value.
         df['ad_name'] = df['ad_name'].fillna('N/A')
 
     if not df.empty:
@@ -187,23 +211,23 @@ def transform_data(api_data: List[Dict[str, Any]]) -> pd.DataFrame:
         # Get all other columns from the DataFrame
         other_cols = [col for col in df.columns if col not in leading_cols]
 
-        # Construct the dynamic column order
-        # Metadata columns like _etl_loaded_at can go at the end.
-        # For simplicity, we just sort the non-key columns.
+        # Enforce a consistent column order for reliable loading.
         column_order = leading_cols + sorted(other_cols)
-
-        # Ensure all expected columns are present before reordering
-        # This is a safeguard if a column was expected but not generated in processed_records
-        # For simplicity, we assume all columns in df.columns are desired.
         df = df[column_order]
     
     return df
 
 
 def append_data_to_postgres(df: pd.DataFrame, table_name: str, db_conn_params: dict):
-    """
-    Appends data from a DataFrame to a PostgreSQL table using an efficient INSERT.
-    This is a simple append-only operation.
+    """Appends data from a DataFrame to a PostgreSQL table.
+
+    This function uses the highly efficient `psycopg2.extras.execute_values`
+    to perform a bulk INSERT operation. It is an append-only operation.
+
+    Args:
+        df: The DataFrame containing the data to load.
+        table_name: The name of the target database table.
+        db_conn_params: A dictionary of connection parameters for psycopg2.
     """
     if df.empty:
         logger.info("No data to load.")
@@ -253,10 +277,9 @@ def get_last_loaded_date(db_conn_params: dict, table_name: str = TARGET_TABLE_NA
         else:
             logger.info(f"No data found in '{table_name}' or no execution date recorded.")
             return None
-    except psycopg2.Error as e:
-        logger.error(f"Database error while fetching last loaded date: {e}")
-        # Depending on policy, you might want to raise this or handle it
-        # For now, returning None will trigger the 5-year lookback.
+    except (psycopg2.Error, psycopg2.OperationalError) as e:
+        logger.warning(f"Could not connect to DB or query failed: {e}. "
+                       "Returning None, which will trigger an initial load if applicable.")
         return None
     finally:
         if conn:
@@ -266,9 +289,21 @@ def get_last_loaded_date(db_conn_params: dict, table_name: str = TARGET_TABLE_NA
 
 
 def _process_etl_chunk(api_key_header: dict, chunk_start_date_str: str, chunk_end_date_str: str, db_conn_params: dict) -> bool:
-    """
-    Processes a single ETL chunk: Fetches, transforms, and loads data.
-    Returns True if successful, False otherwise (for this chunk).
+    """Processes a single ETL chunk: fetch, transform, and load.
+
+    This function orchestrates the ETL process for a specific date range (a "chunk").
+
+    Args:
+        api_key_header: The API key header for the request.
+        chunk_start_date_str: The start date for the API query.
+        chunk_end_date_str: The end date for the API query.
+        db_conn_params: Database connection parameters.
+
+    Returns:
+        True on success (including no-data scenarios).
+
+    Raises:
+        RuntimeError or psycopg2.Error on critical, unrecoverable failures during the load step.
     """
     logger.info(f"Processing chunk: {chunk_start_date_str} to {chunk_end_date_str}")
 
@@ -290,12 +325,12 @@ def _process_etl_chunk(api_key_header: dict, chunk_start_date_str: str, chunk_en
         append_data_to_postgres(transformed_df, TARGET_TABLE_NAME, db_conn_params)
         logger.info(f"Successfully loaded data for chunk {chunk_start_date_str} to {chunk_end_date_str}.")
         return True
-    except psycopg2.Error as db_err: # Specifically catch DB errors from append_data_to_postgres
+    except psycopg2.Error as db_err: # Catch specific DB errors for clear logging.
         logger.error(f"Database error loading data for chunk {chunk_start_date_str} to {chunk_end_date_str}: {db_err}")
         raise # Re-raise to ensure the ETL process acknowledges this critical failure
     except Exception as e:
         logger.error(f"Unexpected error loading data for chunk {chunk_start_date_str} to {chunk_end_date_str}: {e}")
-        # Re-raise as a runtime error to make it a critical failure for the ETL
+        # Re-raise as a runtime error to mark it as a critical failure for the ETL.
         raise RuntimeError(f"Critical failure in chunk processing for {chunk_start_date_str}-{chunk_end_date_str}") from e
 
 
@@ -356,11 +391,12 @@ def _perform_incremental_load(api_key_header: dict, last_loaded_db_date: date, t
 
 
 def main_etl_flow(target_processing_date_str: str):
-    """
-    Main ETL flow.
-    Fetches data up to target_processing_date_str.
-    If the target table is empty, it fetches data for the last 5 years.
-    Otherwise, it fetches data from the day after the last loaded date.
+    """Main ETL orchestration logic.
+
+    This function determines whether to perform a large initial load (for an empty
+    table) or a smaller incremental load based on the latest data present in the
+    database. It manages secret retrieval, database connections, and calls the
+    appropriate load function.
     """
     logger.info(f"Starting ETL process, targeting data up to: {target_processing_date_str}")
 
@@ -381,45 +417,30 @@ def main_etl_flow(target_processing_date_str: str):
         raise RuntimeError(f"ETL Aborted: Failed to retrieve API key ({api_key_secret_name})") from e
 
     db_password_secret_name = os.getenv("DB_PASSWORD_SECRET_NAME")
-    db_password = None
+    db_password = None # Will be populated from Secrets Manager or environment variable
     if db_password_secret_name:
         try:
-            # Use the imported get_api_key_from_secret, assuming it can fetch generic secrets.
-            # This function might return a dict (e.g. {'x-api-key': 'val'}) or the direct secret string.
-            # Adjust based on get_api_key_from_secret's actual behavior and DB secret structure.
-            retrieved_secret_content = get_api_key_from_secret(db_password_secret_name, aws_region)
-
-            if isinstance(retrieved_secret_content, dict):
-                # If the secret is stored as JSON, e.g., {"password": "mysecretpassword"}
-                db_password = retrieved_secret_content.get("password")
-                if db_password is None:
-                    # Attempt to use a common alternative if the API key function returns the key directly
-                    db_password = retrieved_secret_content.get(list(retrieved_secret_content.keys())[0]) if len(retrieved_secret_content.keys()) == 1 else None
-                    if db_password is None:
-                        raise ValueError(f"Key 'password' or a single value not found in DB secret dictionary: {db_password_secret_name}")
-            elif isinstance(retrieved_secret_content, str):
-                # If the secret is stored as a plain string
-                db_password = retrieved_secret_content
-            else:
-                raise ValueError(f"Unexpected type from secret manager for {db_password_secret_name}: {type(retrieved_secret_content)}")
+            # Retrieve the secret, which is expected to be a JSON with a 'password' key.
+            secret_content = get_secret(db_password_secret_name, aws_region)
+            db_password = secret_content.get("password")
             if not db_password:
-                 raise ValueError(f"DB Password retrieved from {db_password_secret_name} is empty.")
+                raise ValueError(f"Key 'password' not found or is empty in secret '{db_password_secret_name}'.")
         except Exception as e:
-            logger.error(f"Failed to retrieve DB password from Secrets Manager ({db_password_secret_name}): {e}. Aborting ETL.")
-            raise RuntimeError(f"ETL Aborted: Failed to retrieve DB password from Secrets Manager ({db_password_secret_name})") from e
+            logger.error(f"Failed to retrieve DB password from Secrets Manager '{db_password_secret_name}': {e}. Aborting ETL.")
+            raise RuntimeError(f"ETL Aborted: Could not retrieve DB password.") from e
 
     db_conn_params = {
         "host": os.getenv("DB_HOST"),
         "database": os.getenv("DB_NAME"),
         "user": os.getenv("DB_USER"),
-        "password": db_password if db_password else os.getenv("DB_PASSWORD"), # Fallback for local testing if needed
+        "password": db_password if db_password else os.getenv("DB_PASSWORD"), # Fallback to .env for local testing
         "port": os.getenv("DB_PORT", "5432")
     }
-    if not all(db_conn_params.get(k) for k in ["host", "database", "user"]): # Check .get(k) for robustness
+    if not all(db_conn_params.get(k) for k in ["host", "database", "user"]):
         logger.error("Database connection parameters (DB_HOST, DB_NAME, DB_USER) are not fully set. Aborting ETL.")
         raise ValueError("ETL Aborted: Essential database connection parameters (DB_HOST, DB_NAME, DB_USER) are not set.")
 
-    last_date_in_db = get_last_loaded_date(db_conn_params) # This function is fine
+    last_date_in_db = get_last_loaded_date(db_conn_params)
 
     if last_date_in_db is None:
         _perform_initial_load(api_key_header, target_date, db_conn_params)
@@ -439,9 +460,4 @@ if __name__ == "__main__":
     # The script will determine the actual start date based on DB content.
     target_date_param = os.getenv("ETL_TARGET_PROCESSING_DATE", date.today().strftime('%Y-%m-%d'))
 
-    try:
-        datetime.strptime(target_date_param, '%Y-%m-%d')
-    except ValueError:
-        logger.error("Invalid date format. Please use YYYY-MM-DD. Exiting.")
-        exit(1)
     main_etl_flow(target_date_param)

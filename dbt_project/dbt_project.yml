@@ -1,35 +1,62 @@
+# This file configures the dbt project, defining its name, version, and how
+# dbt should find and materialize models, tests, and other resources.
+
 name: 'volka_marketing_analytics'
 version: '1.0.0'
 config-version: 2
-# This setting configures which "profile" dbt uses for this project.
+# Specifies which profile from your `profiles.yml` file to use for this project.
 profile: 'volka_marketing_analytics'
-# Add the vars block here, at the root level
+# Defines project-level variables that can be used in models.
+# Useful for global settings like timezones for date functions.
 vars:
-  'dbt_date:time_zone': 'UTC' # Set to your timezone
-# These configurations specify where dbt should look for different types of files.
+  'dbt_date:time_zone': 'UTC'
+# Defines the directory structure for your dbt project components.
 model-paths: ["models"]
 analysis-paths: ["analyses"]
 test-paths: ["tests"]
 seed-paths: ["seeds"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
-target-path: "target" # directory for compiled artifacts
-clean-targets: # directories removed by `dbt clean`
+# Specifies where compiled SQL and other artifacts are stored.
+target-path: "target"
+# Specifies which directories to remove when running `dbt clean`.
+clean-targets:
   - "target"
   - "dbt_packages"
-models:
+# Configures how seeds (CSV files in the `seed-paths` directory) are loaded.
+seeds:
   volka_marketing_analytics:
-    # Default materialization for this project can be 'view' or 'table'
-    # +materialized: view # You can set a project-wide default if desired
-    staging: # Models in models/staging/
-      +materialized: view # Staging models are often views or ephemeral
-      +schema: staging # Output to a 'staging' schema
-    marts: # Models in models/marts/
-      core: # Models in models/marts/core/ (dimensions and facts)
-        +materialized: table # Dimensions and Facts should be tables
-        +schema: analytics # Output to an 'analytics' schema (or 'gold')
-      reporting: # Models in models/marts/reporting/
-        +materialized: view # Reporting models can remain views
-        +schema: reporting # Keep your reporting schema
-    reporting:
-      +schema: reporting
+    # Seeds are typically loaded into a schema designated for raw or static data.
+    +schema: raw_data
+    # It's a good practice to quote column names to prevent issues with
+    # case-sensitivity or special characters in CSV headers.
+    +quote_columns: true
+# Defines configurations for models within the project.
+# This helps enforce consistency and standards across different model layers.
+# Configurations are applied based on the directory structure inside `models/`.
+models:
+  # Configurations are nested under the project name.
+  volka_marketing_analytics:
+    # Configurations for models located in the `models/staging` directory.
+    staging:
+      # Staging models perform light transformations on raw data.
+      # Materializing as views is fast and avoids storing duplicate data.
+      +materialized: view
+      # All staging models will be built in the 'staging' schema.
+      +schema: staging
+    # Configurations for models located in the `models/marts` directory.
+    marts:
+      # This is a subdirectory within marts for core data models.
+      core:
+        # Core models (facts and dimensions) are the building blocks for analytics.
+        # Materializing as tables provides better query performance for downstream models and BI tools.
+        +materialized: table
+        # All core models will be built in the 'analytics' schema.
+        +schema: analytics
+      # This is a subdirectory within marts for business-specific reporting models.
+      reporting:
+        # Reporting models are often final aggregations for specific dashboards or reports.
+        # Views are often sufficient and are quicker to build and update.
+        +materialized: view
+        # All reporting models will be built in the 'reporting' schema.
+        +schema: reporting

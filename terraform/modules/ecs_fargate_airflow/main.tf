@@ -1,10 +1,14 @@
-# terraform/modules/ecs_fargate_airflow/main.tf
-# Deploys Apache Airflow on ECS Fargate using Celery Executor.
-# This module includes ECS cluster, task definitions, services, security groups,
-# CloudWatch logs, and outlines for EFS and ALB integration.
+/*
+Module: ecs_fargate_airflow
+Description: Provisions a complete, production-ready Apache Airflow environment on AWS
+ECS using the Fargate launch type and the Celery Executor.
 
-# Note: A production setup requires careful sizing, persistent storage (EFS),
-# robust logging, monitoring, and potentially an ALB.
+This module creates an ECS cluster, task definitions, and services for the Airflow
+Webserver, Scheduler, and Workers. It also provisions necessary supporting infrastructure,
+including an Application Load Balancer (ALB), an EFS file system for persistent DAGs and
+logs, an ElastiCache for Redis cluster as the Celery broker, and all required IAM roles
+and security groups.
+*/
 
 variable "project_name" {
   description = "A name for the project to prefix resources"
@@ -130,7 +134,6 @@ variable "airflow_worker_max_count" {
   default     = 4
 }
 
-# --- ECS Cluster ---
 resource "aws_ecs_cluster" "airflow" {
   name = "${var.project_name}-airflow-cluster"
 
@@ -140,7 +143,6 @@ resource "aws_ecs_cluster" "airflow" {
   }
 }
 
-# --- Security Groups ---
 resource "aws_security_group" "airflow_tasks" {
   name_prefix = "${var.project_name}-airflow-tasks-"
   description = "Security group for Airflow Fargate tasks"
@@ -175,8 +177,6 @@ resource "aws_security_group" "airflow_tasks" {
   tags = { Name = "${var.project_name}-airflow-tasks" }
 }
 
-# Add ingress rule to RDS Security Group from this Airflow SG
-# --- Security Group Rules ---
 resource "aws_security_group_rule" "airflow_to_rds" {
   type              = "ingress"
   from_port         = var.db_instance_port
@@ -197,8 +197,8 @@ resource "aws_security_group_rule" "airflow_to_redis" {
   description              = "Allow Airflow tasks to connect to Redis"
 }
 
-# --- IAM Roles & Policies ---
-# ECS Task Execution Role (for Fargate to pull images, send logs)
+# This IAM role is assumed by the ECS agent to perform actions on your behalf,
+# such as pulling container images from ECR and writing logs to CloudWatch.
 resource "aws_iam_role" "airflow_task_execution_role" {
   name = "${var.project_name}-airflow-task-exec-role"
   assume_role_policy = jsonencode({
@@ -213,16 +213,12 @@ resource "aws_iam_role" "airflow_task_execution_role" {
   })
 }
 
+# Attaches the AWS-managed policy that grants the necessary permissions for the ECS agent.
 resource "aws_iam_role_policy_attachment" "airflow_task_execution_role_policy" {
   role       = aws_iam_role.airflow_task_execution_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# The ETL task role (var.etl_task_role_arn) will be used as the Task Role for Airflow workers.
-
-# This role needs permissions to access Secrets Manager (for API key), S3 (if used), etc.
-
-# --- EFS for Persistent Storage (Recommended for Production) ---
 resource "aws_efs_file_system" "airflow_data" {
   creation_token = "${var.project_name}-airflow-efs"
   performance_mode = "generalPurpose" # Or maxIO for higher throughput needs
@@ -271,7 +267,6 @@ resource "aws_efs_mount_target" "airflow_data" {
   security_groups = [aws_security_group.efs_access.id]
 }
 
-# --- CloudWatch Log Group ---
 resource "aws_cloudwatch_log_group" "airflow" {
   name = "/ecs/airflow/${var.project_name}"
   retention_in_days = 30 # Or your desired retention
@@ -280,11 +275,6 @@ resource "aws_cloudwatch_log_group" "airflow" {
     Name = "${var.project_name}-airflow-logs"
   }
 }
-
-# --- ECS Task Definitions (Webserver, Scheduler, Worker) ---
-# Define task definitions for each Airflow component.
-# These will specify the container image, CPU/Memory, ports, environment variables,
-# mount points (for DAGs and logs, likely using EFS), and IAM roles.
 
 locals {
   # Define EFS volume configuration once to reuse in task definitions
@@ -334,8 +324,6 @@ locals {
   }]
 }
 
-# --- ECS Services (Webserver, Scheduler, Worker) ---
-
 resource "aws_ecs_task_definition" "airflow_webserver" {
   family                   = "${var.project_name}-airflow-webserver"
   cpu                      = var.airflow_webserver_cpu
@@ -343,7 +331,9 @@ resource "aws_ecs_task_definition" "airflow_webserver" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"] 
   execution_role_arn       = aws_iam_role.airflow_task_execution_role.arn
-  task_role_arn            = var.etl_task_role_arn # Assign role for future use (e.g., secrets backend)
+  # The task role grants permissions to the Airflow application itself.
+  # Useful for features like the S3/Secrets Manager secrets backend.
+  task_role_arn            = var.etl_task_role_arn
   container_definitions    = jsonencode([
     {
       name        = "airflow-webserver"
@@ -368,7 +358,6 @@ resource "aws_ecs_task_definition" "airflow_webserver" {
     }
   ])
   volumes = [local.efs_volume_configuration]
-  # Add volume definitions for EFS if not using the local block
 }
 
 resource "aws_ecs_task_definition" "airflow_scheduler" {
@@ -378,7 +367,9 @@ resource "aws_ecs_task_definition" "airflow_scheduler" {
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = aws_iam_role.airflow_task_execution_role.arn 
-  task_role_arn            = var.etl_task_role_arn # Assign role for future use (e.g., secrets backend)
+  # The task role grants permissions to the Airflow application itself.
+  # The scheduler needs this to parse DAGs that might interact with AWS services.
+  task_role_arn            = var.etl_task_role_arn
   container_definitions    = jsonencode([
     {
       name        = "airflow-scheduler"
@@ -402,7 +393,6 @@ resource "aws_ecs_task_definition" "airflow_scheduler" {
     }
   ])
   volumes = [local.efs_volume_configuration]
-  # Add volume definitions for EFS if not using the local block
 }
 
 resource "aws_ecs_task_definition" "airflow_worker" {
@@ -440,9 +430,7 @@ resource "aws_ecs_task_definition" "airflow_worker" {
     }
   ])
   volumes = [local.efs_volume_configuration]
-  # Add volume definitions for EFS if not using the local block
 }
-
 
 resource "aws_ecs_service" "airflow_webserver" {
   name            = "${var.project_name}-airflow-webserver-service"
@@ -463,7 +451,6 @@ resource "aws_ecs_service" "airflow_webserver" {
   }
 
   depends_on = [aws_lb_listener.https]
-  # Add deployment configuration, service discovery, etc.
 }
 
 resource "aws_ecs_service" "airflow_scheduler" {
@@ -477,7 +464,6 @@ resource "aws_ecs_service" "airflow_scheduler" {
     security_groups = [aws_security_group.airflow_tasks.id]
     assign_public_ip = false # Keep in private subnets
   }
-  # Add deployment configuration, service discovery, etc.
 }
 
 resource "aws_ecs_service" "airflow_worker" {
@@ -494,13 +480,13 @@ resource "aws_ecs_service" "airflow_worker" {
     assign_public_ip = false # Keep in private subnets
   }
 
+  # The deployment circuit breaker automatically rolls back failed deployments.
   deployment_circuit_breaker {
     enable   = true
     rollback = true
   }
 }
 
-# --- Auto Scaling for Airflow Workers ---
 resource "aws_appautoscaling_target" "worker_scaling_target" {
   max_capacity       = var.airflow_worker_max_count
   min_capacity       = var.airflow_worker_min_count
@@ -545,7 +531,6 @@ resource "aws_appautoscaling_policy" "worker_scale_memory" {
   }
 }
 
-# --- Application Load Balancer for Webserver ---
 resource "aws_security_group" "airflow_alb" {
   name_prefix = "${var.project_name}-alb-sg-"
   description = "Allow HTTP and HTTPS traffic to Airflow ALB"
@@ -629,7 +614,6 @@ resource "aws_lb_listener" "http_redirect" {
   }
 }
 
-# --- ElastiCache for Redis (Celery Broker) ---
 resource "aws_elasticache_subnet_group" "redis" {
   name       = "${var.project_name}-redis-subnet-group"
   subnet_ids = var.private_subnet_ids
@@ -656,9 +640,14 @@ resource "aws_elasticache_cluster" "redis" {
 # The data source to retrieve the secret is no longer needed, as we are using the `secrets`
 # block in the container definition, which is the more secure, modern approach.
 # data "aws_secretsmanager_secret_version" "db_password" {
-#   secret_id = var.db_password_secret_arn
+#  secret_id = var.db_password_secret_arn
 # }
 
-# Outputs (e.g., ALB endpoint for webserver, EFS ID)
-output "efs_file_system_id" { value = aws_efs_file_system.airflow_data.id }
-output "webserver_url" { value = aws_lb.airflow_web.dns_name }
+output "efs_file_system_id" {
+  description = "The ID of the EFS file system used for persistent DAGs and logs."
+  value       = aws_efs_file_system.airflow_data.id
+}
+output "webserver_url" {
+  description = "The public URL of the Airflow webserver, served by the Application Load Balancer."
+  value       = "https://${aws_lb.airflow_web.dns_name}"
+}

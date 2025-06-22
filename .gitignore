@@ -1,4 +1,4 @@
-# Python
+# --- Python ---
 __pycache__/
 *.py[cod]
 *$py.class
@@ -20,10 +20,10 @@ wheels/
 *.egg
 instance/
 *.log
-.env
 *.DS_Store
+.env # Contains secrets, should never be committed. Use .env.encrypted instead.
 
-# Terraform
+# --- Terraform ---
 .terraform/
 *.tfstate
 *.tfstate.*
@@ -34,11 +34,11 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
-# dbt
+# --- dbt ---
 dbt_project/target/
 dbt_project/logs/
 dbt_project/dbt_packages/
 
-# IDE / OS specific
+# --- IDE / OS Specific ---
 .vscode/
 .idea/

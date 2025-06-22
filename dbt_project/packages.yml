@@ -1,5 +1,9 @@
 packages:
-  - package: metaplane/dbt_expectations # Updated package name
-    version: [">=0.10.0", "<0.11.0"] # Check dbt Hub for latest compatible version for metaplane fork
+  - package: metaplane/dbt_expectations
+    # Use a version compatible with your dbt version. Check dbt Hub for the latest:
+    # https://hub.getdbt.com/metaplane/dbt_expectations/versions/
+    version: [">=0.10.0", "<0.11.0"]
   - package: dbt-labs/dbt_utils
-    version: [">=1.0.0", "<2.0.0"] # Example: Use a version compatible with your dbt version. 1.3.0 is known.
+    # Use a version compatible with your dbt version. For example, for dbt 1.x:
+    # https://hub.getdbt.com/dbt-labs/dbt_utils/versions/
+    version: [">=1.0.0", "<2.0.0"]

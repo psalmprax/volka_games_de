@@ -1,62 +1,81 @@
--- models/marts/core/fct_daily_performance.sql
-with current_performance_snapshot as (
-    select * from {{ ref('scd_campaign_performance') }}
-    where dbt_valid_to is null -- Select only the current version of each record
+{%- doc -%}
+This model creates a daily performance fact table, providing a central place for analytics.
+
+**Grain**: One row per campaign, per ad, per day, representing the most current performance data.
+
+**Sources**:
+- `stg_campaign_performance`: The primary source of performance metrics.
+- `dim_dates`, `dim_campaigns`, `dim_ads`: Dimension tables to provide context.
+
+**Key Logic**:
+- Builds on the cleaned `stg_campaign_performance` model, which provides current data with correct data types.
+- Joins to dimension tables to get surrogate keys for robust dimensional analysis.
+- Includes key performance metrics and lifeday cohort data in standard currency units (EUR).
+{%- enddoc -%}
+
+with performance as (
+    -- Use the staging model which provides cleaned, correctly-typed, and current data
+    select * from {{ ref('stg_campaign_performance') }}
 ),
 
 dim_campaigns as (
     select * from {{ ref('dim_campaigns') }}
 ),
-
 dim_ads as (
     select * from {{ ref('dim_ads') }}
 ),
-
 dim_dates as (
     select * from {{ ref('dim_dates') }}
 )
 
 select
-    -- Surrogate key for the fact table
-    -- Use the snapshot's unique ID for the version of the record
-    cps.dbt_scd_id as daily_performance_key, 
+    -- Surrogate key for the fact table, inherited from the staging layer
+    performance.campaign_performance_sk as daily_performance_sk,
 
-    -- Dimension Keys
-    dd.date_id,
-    dc.campaign_id,
-    da.ad_id,
+    -- Dimension Foreign Keys
+    -- These keys link our performance facts to the dimensional context.
+    dim_dates.date_key,
+    dim_campaigns.campaign_key,
+    dim_ads.ad_key,
 
-    -- Degenerate Dimensions (attributes from the source that don't fit well in separate dims)
-    cps.campaign_name, 
-    cps.ad_name,       
+    -- Degenerate Dimensions: useful attributes that don't warrant a full dimension
+    -- and can simplify querying in BI tools.
+    performance.campaign_name,
+    performance.ad_name,
 
-    -- Measures
-    cps.spend_cents,
-    cps.impressions,
-    cps.clicks,
-    cps.registrations,
-    cps.ctr,
-    cps.cr,
-    cps.cpc_cents,
-    cps.players_1d,
-    cps.payers_1d,
-    cps.payments_1d,
-    cps.revenue_1d_cents,
-    cps.players_3d,
-    cps.payers_3d,
-    cps.payments_3d,
-    cps.revenue_3d_cents,
-    cps.players_7d,
-    cps.payers_7d,
-    cps.payments_7d,
-    cps.revenue_7d_cents,
-    cps.players_14d,
-    cps.payers_14d,
-    cps.payments_14d,
-    cps.revenue_14d_cents
+    -- Core Performance Measures (in EUR)
+    performance.spend_eur,
+    performance.impressions,
+    performance.clicks,
+    performance.registrations,
+    performance.cpc_eur,
+    performance.ctr,
+    performance.cr,
 
-from current_performance_snapshot cps
-left join dim_dates dd on cps.campaigns_execution_date = dd.date_id -- or dd.full_date
-left join dim_campaigns dc on cps.campaign_name = dc.campaign_name
-left join dim_ads da on cps.ad_name = da.ad_name
-    and dc.campaign_id = da.campaign_id -- Join on campaign_id if ad_name is not globally unique
+    -- Lifeday Metrics (in EUR)
+    performance.players_1d,
+    performance.payers_1d,
+    performance.payments_1d,
+    performance.revenue_1d_eur,
+    performance.players_3d,
+    performance.payers_3d,
+    performance.payments_3d,
+    performance.revenue_3d_eur,
+    performance.players_7d,
+    performance.payers_7d,
+    performance.payments_7d,
+    performance.revenue_7d_eur,
+    performance.players_14d,
+    performance.payers_14d,
+    performance.payments_14d,
+    performance.revenue_14d_eur,
+
+    -- Metadata for data lineage and debugging
+    performance.valid_from_timestamp,
+    performance.updated_at_timestamp
+
+from performance
+left join dim_dates on performance.report_date = dim_dates.date_day -- Join on the actual date column for accuracy
+left join dim_campaigns on performance.campaign_name = dim_campaigns.campaign_name
+left join dim_ads on performance.ad_name = dim_ads.ad_name
+    and dim_campaigns.campaign_key = dim_ads.campaign_fk -- Join on campaign foreign key to ensure ad uniqueness

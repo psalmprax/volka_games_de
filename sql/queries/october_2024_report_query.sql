@@ -1,16 +1,27 @@
--- /volka_data_pipeline/sql/queries/october_2024_report_query.sql
--- Query for October 2024 Campaign Summary for Excel Export
--- Assumes the dbt model is materialized as a view in the 'reporting' schema
+/*
+File: /sql/queries/october_2024_report_query.sql
+Purpose: Generates the monthly marketing campaign summary for October 2024.
+Usage: This query is intended for analysts to export data for business reporting (e.g., to Excel).
+       It selects the key performance indicators from the final dbt reporting model for a specific month.
+
+Dependencies:
+- It queries the `monthly_campaign_summary` view, which is expected to be in the `public_reporting` schema
+  as per the project's data modeling conventions. If your dbt profile targets a different
+  schema.
+*/
 SELECT
+    report_month,
     campaign_name,
-    -- Spend: Convert cents to currency unit (e.g., Euros)
-    total_spend_cents / 100.0 AS spend_euros,
+    total_spend,
     total_impressions,
     total_clicks,
     total_registrations,
     total_payers_14d,
-    -- Revenue 14d: Convert cents to currency unit
-    total_revenue_14d_cents / 100.0 AS revenue_14d_euros
-FROM reporting.monthly_campaign_summary -- Or public.monthly_campaign_summary if schema not specified in dbt
-WHERE report_month = '2024-10-01' -- dbt model stores report_month as the first day of the month
-ORDER BY campaign_name;
+    total_revenue_14d
+FROM
+    public_reporting.monthly_campaign_summary
+WHERE
+    -- The report_month column in the dbt model stores the first day of the month.
+    report_month = '2024-10-01'
+ORDER BY
+    campaign_name;

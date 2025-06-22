@@ -1,8 +1,8 @@
 x-airflow-common: &airflow-common
   # image: your-repo/volka-airflow:latest # Use this if you build and push the image
   build:
-    context: .
-    dockerfile: ./Dockerfile # Assuming Dockerfile is in the project root
+    context: . # The build context is the project root.
+    dockerfile: ./Dockerfile
   user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}" # Avoids permission issues with mounted volumes
   env_file:
     - .env # Load environment variables for DB connection, API keys etc.
@@ -27,33 +27,24 @@ x-airflow-common: &airflow-common
     - ./sql:/opt/airflow/sql # Mount SQL files if needed
     - ./logs:/opt/airflow/logs # Persist logs
     - ./plugins:/opt/airflow/plugins # Persist plugins
-    # Mount dbt profiles directory if you want to manage it outside the container and use env vars
-    - ./dbt_project/profiles.yml:/opt/airflow/dbt_project/profiles.yml # Mount profiles.yml for dbt
   depends_on:
     postgres_db:
       condition: service_healthy
     redis:
       condition: service_healthy
-    # airflow-init: # If using an init container
-    #   condition: service_completed_successfully
 
 services:
-  airflow-init: # Optional: For DB migrations and creating admin user
+  # This service runs once on startup to initialize the database and create the admin user.
+  airflow-init:
     <<: *airflow-common
     container_name: volka_airflow_init
     entrypoint: /bin/bash
     command:
-      - -ec # Use -e to exit on error
+      - -ec # Use -e to exit immediately if a command exits with a non-zero status.
       - |
         airflow db upgrade
-        # Create admin user; || true prevents failure if user already exists
+        # Create admin user; `|| true` prevents the script from failing if the user already exists.
         airflow users create -u admin -p admin -r Admin -e admin@example.com -f admin -l user || true
-        # # Unpause the dbt DAGs so they can be triggered. || true prevents failure if a DAG doesn't exist yet.
-        # echo "Unpausing generated dbt DAGs..."
-        # airflow dags unpause volka_dbt_staging_pipeline || true
-        # airflow dags unpause volka_dbt_snapshot_pipeline || true
-        # airflow dags unpause volka_dbt_marts_core_pipeline || true
-        # airflow dags unpause volka_dbt_marts_reporting_pipeline || true
 
   postgres_db:
     image: postgres:14
@@ -66,6 +57,7 @@ services:
       - POSTGRES_DB=${DB_NAME:-airflow_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # This health check ensures that other services only start after the database is ready to accept connections.
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "${DB_USER:-airflow_user}", "-d", "${DB_NAME:-airflow_db}"]
       interval: 5s
@@ -77,6 +69,7 @@ services:
     container_name: volka_redis
     ports: # Expose for local development/debugging
       - "6379:6379"
+    # This health check ensures Redis is responsive before Airflow components try to connect.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -86,7 +79,7 @@ services:
   airflow-webserver:
     <<: *airflow-common
     container_name: volka_airflow_webserver
-    command: ["webserver"] # Original command passed to decrypt_env.sh
+    command: ["webserver"] # This is the default command for the webserver service.
     ports: # Expose for local development/debugging
       - "8080:8080"
     healthcheck:
@@ -98,8 +91,8 @@ services:
   airflow-scheduler:
     <<: *airflow-common
     container_name: volka_airflow_scheduler
-    command: ["scheduler"] # Original command
-    healthcheck: # Corrected hostname
+    command: ["scheduler"]
+    healthcheck:
       test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $(hostname)"]
       interval: 10s
       timeout: 10s
@@ -108,9 +101,9 @@ services:
   airflow-worker:
     <<: *airflow-common
     container_name: volka_airflow_worker
-    command: ["celery", "worker"] # Original command
+    command: ["celery", "worker"]
     # You can scale workers using: docker-compose up --scale airflow-worker=3
-    healthcheck: # Corrected hostname
+    healthcheck:
       test: ["CMD-SHELL", "airflow jobs check --job-type WorkerJob --hostname $(hostname)"]
       interval: 10s
       timeout: 10s
@@ -119,7 +112,7 @@ services:
   airflow-flower:
     <<: *airflow-common
     container_name: volka_airflow_flower
-    command: ["celery", "flower", "--broker=redis://redis:6379/0"] # Original command
+    command: ["celery", "flower", "--broker=redis://redis:6379/0"]
     ports: # Expose for local development/debugging
       - "5555:5555"
 

@@ -1,13 +1,24 @@
+# This profile configures dbt to connect to the project's PostgreSQL database.
+# It uses environment variables for all connection details to avoid hardcoding
+# secrets and to allow for flexible configuration across different environments
+# (e.g., local development vs. production).
+
 volka_marketing_analytics:
   target: dev
   outputs:
     dev:
       type: postgres
-      host: "{{ env_var('DBT_DB_HOST', 'postgres_db') }}" # Changed from localhost to postgres_db
+      # The host defaults to 'postgres_db', which is the expected service
+      # name for the database container in the local Docker Compose setup.
+      host: "{{ env_var('DBT_DB_HOST', 'postgres_db') }}"
       user: "{{ env_var('DBT_DB_USER', 'volka_user') }}"
+      # IMPORTANT: The default password is for local development only.
+      # In a real environment, this MUST be set via the DBT_DB_PASSWORD env var.
       password: "{{ env_var('DBT_DB_PASSWORD', 'yoursecurepassword') }}"
       port: "{{ env_var('DBT_DB_PORT', '5432') | int }}"
       dbname: "{{ env_var('DBT_DB_NAME', 'volka_marketing_db') }}"
       schema: "{{ env_var('DBT_DB_SCHEMA', 'public') }}"
+      # Sets the number of concurrent models dbt can run. Adjust based on your machine's resources.
       threads: 4
-      # sslmode: prefer # if required by your RDS setup
+      # Uncomment the line below when connecting to a cloud database (e.g., AWS RDS) that requires SSL.
+      # sslmode: prefer
