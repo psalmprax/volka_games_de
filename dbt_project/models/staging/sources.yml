@@ -1,11 +1,14 @@
 version: 2
 sources:
-  - name: raw_data # This is the source group name
+  - name: raw_data
     description: "Source tables loaded by the Python ETL process."
-    schema: public # Corresponds to DBT_DB_SCHEMA, typically 'public' for the raw data
+    # This is the source schema where the raw tables physically reside in the database.
+    # It should match the schema where the ETL script loads the data.
+    schema: public
     tables:
       - name: campaign_performance_raw_appends
         description: "Raw, append-only campaign performance data loaded by the Python ETL script. History is captured via dbt snapshots."
+        # `loaded_at_field` is used for freshness checks.
         loaded_at_field: "_etl_loaded_at"
         freshness:
           warn_after: {count: 12, period: hour}
@@ -22,56 +25,110 @@ sources:
             tests:
               - not_null
           - name: ad_name
-            description: "Name of the ad creative or ad set. Defaults to 'N/A' if not provided by the API."
+            description: "Name of the ad creative or ad set. Defaults to 'N/A' by the ETL if not provided by the API."
             tests:
               - not_null
           - name: spend_cents
             description: "Advertising spend for the campaign on the execution date, in cents."
             tests:
-              # - dbt_expectations.expect_column_values_to_not_be_in_set:
-              #     value_set: [0, -1, -2] # , '-3', '-4', '-5', '-6', '-7', '-8', '-9']
-              #     row_condition: "spend_cents > 0"
+              - not_null
               - dbt_expectations.expect_column_values_to_be_of_type:
                   column_type: integer
+              # The ETL script replaces negative values with 0, so spend should always be non-negative.
+              - dbt_expectations.expect_column_values_to_be_between:
+                  min_value: 0
           - name: impressions
             description: "Number of times the ad was shown."
             tests:
+              - not_null
               - dbt_expectations.expect_column_values_to_be_of_type:
                   column_type: integer
+              - dbt_expectations.expect_column_values_to_be_between:
+                  min_value: 0
           - name: clicks
             description: "Number of clicks on the ad."
             tests:
+              - not_null
               - dbt_expectations.expect_column_values_to_be_of_type:
                   column_type: integer
+              - dbt_expectations.expect_column_values_to_be_between:
+                  min_value: 0
           - name: registrations
             description: "Number of user registrations attributed to the campaign."
             tests:
+              - not_null
               - dbt_expectations.expect_column_values_to_be_of_type:
                   column_type: integer
+              - dbt_expectations.expect_column_values_to_be_between:
+                  min_value: 0
           - name: ctr
-            description: "Click-Through Rate (clicks / impressions)."
+            description: "Click-Through Rate (clicks / impressions), calculated by the source system."
             tests:
+              - not_null
               - dbt_expectations.expect_column_values_to_be_of_type:
                   column_type: numeric
+              - dbt_expectations.expect_column_values_to_be_between:
+                  min_value: 0
           - name: cr
-            description: "Conversion Rate (e.g., registrations / clicks)."
+            description: "Conversion Rate (e.g., registrations / clicks), calculated by the source system."
             tests:
+              - not_null
               - dbt_expectations.expect_column_values_to_be_of_type:
                   column_type: numeric
+              - dbt_expectations.expect_column_values_to_be_between:
+                  min_value: 0
           - name: cpc_cents
             description: "Cost Per Click, in cents."
             tests:
+              - not_null
               - dbt_expectations.expect_column_values_to_be_of_type:
                   column_type: integer
+              - dbt_expectations.expect_column_values_to_be_between:
+                  min_value: 0
           - name: players_1d
             description: "Number of unique players active 1 day after install/registration."
+            tests:
+              - not_null
+              - dbt_expectations.expect_column_values_to_be_between: {min_value: 0}
           - name: payers_1d
             description: "Number of unique paying players 1 day after install/registration."
+            tests:
+              - not_null
+              - dbt_expectations.expect_column_values_to_be_between: {min_value: 0}
           - name: payments_1d
             description: "Total number of payments made 1 day after install/registration."
+            tests:
+              - not_null
+              - dbt_expectations.expect_column_values_to_be_between: {min_value: 0}
           - name: revenue_1d_cents
             description: "Total revenue generated 1 day after install/registration, in cents."
-          # Note: Lifeday metrics for 3d, 7d, and 14d are omitted for brevity but should be included.
+            tests:
+              - not_null
+              - dbt_expectations.expect_column_values_to_be_between: {min_value: 0}
+          - name: players_3d
+            description: "Number of unique players active 3 days after install/registration."
+          - name: payers_3d
+            description: "Number of unique paying players 3 days after install/registration."
+          - name: payments_3d
+            description: "Total number of payments made 3 days after install/registration."
+          - name: revenue_3d_cents
+            description: "Total revenue generated 3 days after install/registration, in cents."
+          - name: players_7d
+            description: "Number of unique players active 7 days after install/registration."
+          - name: payers_7d
+            description: "Number of unique paying players 7 days after install/registration."
+          - name: payments_7d
+            description: "Total number of payments made 7 days after install/registration."
+          - name: revenue_7d_cents
+            description: "Total revenue generated 7 days after install/registration, in cents."
+          - name: players_14d
+            description: "Number of unique players active 14 days after install/registration."
+          - name: payers_14d
+            description: "Number of unique paying players 14 days after install/registration."
+          - name: payments_14d
+            description: "Total number of payments made 14 days after install/registration."
+          - name: revenue_14d_cents
+            description: "Total revenue generated 14 days after install/registration, in cents."
           - name: _etl_loaded_at
             description: "Timestamp of when the record was loaded by the ETL process."
             tests:

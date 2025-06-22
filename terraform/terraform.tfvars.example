@@ -8,4 +8,12 @@ project_name = "volka-mktg-pipe-dev"
 # You might want to append a random suffix or use your AWS account ID.
 s3_bucket_name = "volka-mktg-pipeline-data-your-unique-suffix"
 
+# The full ECR repository URL for your custom Airflow Docker image.
+# Example: "123456789012.dkr.ecr.eu-central-1.amazonaws.com/my-airflow:latest"
+airflow_docker_image = "YOUR_ECR_AIRFLOW_IMAGE_URL"
+
+# The ARN of a pre-existing ACM certificate for the Airflow webserver's ALB.
+# Example: "arn:aws:acm:eu-central-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+acm_certificate_arn = "YOUR_ACM_CERTIFICATE_ARN"
+
 # db_password = "aVeryStrongPassword" # It's better to manage this via Secrets Manager directly or generate it.
