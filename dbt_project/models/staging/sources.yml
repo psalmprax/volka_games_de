@@ -1,0 +1,78 @@
+version: 2
+sources:
+  - name: raw_data # This is the source group name
+    description: "Source tables loaded by the Python ETL process."
+    schema: public # Corresponds to DBT_DB_SCHEMA, typically 'public' for the raw data
+    tables:
+      - name: campaign_performance_raw_appends
+        description: "Raw, append-only campaign performance data loaded by the Python ETL script. History is captured via dbt snapshots."
+        loaded_at_field: "_etl_loaded_at"
+        freshness:
+          warn_after: {count: 12, period: hour}
+          error_after: {count: 24, period: hour}
+        columns:
+          - name: campaigns_execution_date
+            description: "The date for which the campaign performance metrics are recorded."
+            tests:
+              - not_null
+              - dbt_expectations.expect_column_values_to_be_of_type:
+                  column_type: date
+          - name: campaign_name
+            description: "Name of the marketing campaign."
+            tests:
+              - not_null
+          - name: ad_name
+            description: "Name of the ad creative or ad set. Defaults to 'N/A' if not provided by the API."
+            tests:
+              - not_null
+          - name: spend_cents
+            description: "Advertising spend for the campaign on the execution date, in cents."
+            tests:
+              # - dbt_expectations.expect_column_values_to_not_be_in_set:
+              #     value_set: [0, -1, -2] # , '-3', '-4', '-5', '-6', '-7', '-8', '-9']
+              #     row_condition: "spend_cents > 0"
+              - dbt_expectations.expect_column_values_to_be_of_type:
+                  column_type: integer
+          - name: impressions
+            description: "Number of times the ad was shown."
+            tests:
+              - dbt_expectations.expect_column_values_to_be_of_type:
+                  column_type: integer
+          - name: clicks
+            description: "Number of clicks on the ad."
+            tests:
+              - dbt_expectations.expect_column_values_to_be_of_type:
+                  column_type: integer
+          - name: registrations
+            description: "Number of user registrations attributed to the campaign."
+            tests:
+              - dbt_expectations.expect_column_values_to_be_of_type:
+                  column_type: integer
+          - name: ctr
+            description: "Click-Through Rate (clicks / impressions)."
+            tests:
+              - dbt_expectations.expect_column_values_to_be_of_type:
+                  column_type: numeric
+          - name: cr
+            description: "Conversion Rate (e.g., registrations / clicks)."
+            tests:
+              - dbt_expectations.expect_column_values_to_be_of_type:
+                  column_type: numeric
+          - name: cpc_cents
+            description: "Cost Per Click, in cents."
+            tests:
+              - dbt_expectations.expect_column_values_to_be_of_type:
+                  column_type: integer
+          - name: players_1d
+            description: "Number of unique players active 1 day after install/registration."
+          - name: payers_1d
+            description: "Number of unique paying players 1 day after install/registration."
+          - name: payments_1d
+            description: "Total number of payments made 1 day after install/registration."
+          - name: revenue_1d_cents
+            description: "Total revenue generated 1 day after install/registration, in cents."
+          # Note: Lifeday metrics for 3d, 7d, and 14d are omitted for brevity but should be included.
+          - name: _etl_loaded_at
+            description: "Timestamp of when the record was loaded by the ETL process."
+            tests:
+              - not_null

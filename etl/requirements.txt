@@ -1,0 +1,7 @@
+requests
+pandas
+psycopg2-binary
+boto3
+apache-airflow-providers-postgres
+PyYAML>=6.0
+python-dotenv # For local development to load .env files

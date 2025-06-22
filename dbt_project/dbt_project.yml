@@ -1,0 +1,35 @@
+name: 'volka_marketing_analytics'
+version: '1.0.0'
+config-version: 2
+# This setting configures which "profile" dbt uses for this project.
+profile: 'volka_marketing_analytics'
+# Add the vars block here, at the root level
+vars:
+  'dbt_date:time_zone': 'UTC' # Set to your timezone
+# These configurations specify where dbt should look for different types of files.
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+target-path: "target" # directory for compiled artifacts
+clean-targets: # directories removed by `dbt clean`
+  - "target"
+  - "dbt_packages"
+models:
+  volka_marketing_analytics:
+    # Default materialization for this project can be 'view' or 'table'
+    # +materialized: view # You can set a project-wide default if desired
+    staging: # Models in models/staging/
+      +materialized: view # Staging models are often views or ephemeral
+      +schema: staging # Output to a 'staging' schema
+    marts: # Models in models/marts/
+      core: # Models in models/marts/core/ (dimensions and facts)
+        +materialized: table # Dimensions and Facts should be tables
+        +schema: analytics # Output to an 'analytics' schema (or 'gold')
+      reporting: # Models in models/marts/reporting/
+        +materialized: view # Reporting models can remain views
+        +schema: reporting # Keep your reporting schema
+    reporting:
+      +schema: reporting

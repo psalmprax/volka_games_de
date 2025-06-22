@@ -1,0 +1,13 @@
+volka_marketing_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DBT_DB_HOST', 'postgres_db') }}" # Changed from localhost to postgres_db
+      user: "{{ env_var('DBT_DB_USER', 'volka_user') }}"
+      password: "{{ env_var('DBT_DB_PASSWORD', 'yoursecurepassword') }}"
+      port: "{{ env_var('DBT_DB_PORT', '5432') | int }}"
+      dbname: "{{ env_var('DBT_DB_NAME', 'volka_marketing_db') }}"
+      schema: "{{ env_var('DBT_DB_SCHEMA', 'public') }}"
+      threads: 4
+      # sslmode: prefer # if required by your RDS setup

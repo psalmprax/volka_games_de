@@ -1,0 +1,128 @@
+x-airflow-common: &airflow-common
+  # image: your-repo/volka-airflow:latest # Use this if you build and push the image
+  build:
+    context: .
+    dockerfile: ./Dockerfile # Assuming Dockerfile is in the project root
+  user: "${AIRFLOW_UID:-50000}:${AIRFLOW_GID:-0}" # Avoids permission issues with mounted volumes
+  env_file:
+    - .env # Load environment variables for DB connection, API keys etc.
+  environment:
+    - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+    - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
+    # --- PostgreSQL Backend ---
+    # These should match the postgres service below and your .env file
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${DB_USER:-airflow_user}:${DB_PASSWORD:-airflow_pass}@postgres_db:5432/${DB_NAME:-airflow_db}
+    - AIRFLOW__CORE__SECRET_KEY=${AIRFLOW__CORE__SECRET_KEY:-afac79b7bfe885fb0728b863f8c38a40} # Ensure this is set and consistent
+    # --- Celery Executor Configuration ---
+    - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
+    - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://${DB_USER:-airflow_user}:${DB_PASSWORD:-airflow_pass}@postgres_db:5432/${DB_NAME:-airflow_db}
+    # --- Secrets Backend (Optional but good practice, ensure provider is installed if used) ---
+    # - AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
+    # - AIRFLOW__SECRETS__BACKEND_KWARGS={"connections_prefix": "airflow/connections", "variables_prefix": "airflow/variables", "config_prefix": "airflow/config", "region_name": "eu-central-1"}
+  volumes:
+    - ./airflow_dags:/opt/airflow/dags
+    - ./etl:/opt/airflow/etl # Mount ETL code for live changes
+    - ./dbt_project:/opt/airflow/dbt_project # Mount dbt project for live changes
+    - ./sql:/opt/airflow/sql # Mount SQL files if needed
+    - ./logs:/opt/airflow/logs # Persist logs
+    - ./plugins:/opt/airflow/plugins # Persist plugins
+    # Mount dbt profiles directory if you want to manage it outside the container and use env vars
+    - ./dbt_project/profiles.yml:/opt/airflow/dbt_project/profiles.yml # Mount profiles.yml for dbt
+  depends_on:
+    postgres_db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    # airflow-init: # If using an init container
+    #   condition: service_completed_successfully
+
+services:
+  airflow-init: # Optional: For DB migrations and creating admin user
+    <<: *airflow-common
+    container_name: volka_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -ec # Use -e to exit on error
+      - |
+        airflow db upgrade
+        # Create admin user; || true prevents failure if user already exists
+        airflow users create -u admin -p admin -r Admin -e admin@example.com -f admin -l user || true
+        # # Unpause the dbt DAGs so they can be triggered. || true prevents failure if a DAG doesn't exist yet.
+        # echo "Unpausing generated dbt DAGs..."
+        # airflow dags unpause volka_dbt_staging_pipeline || true
+        # airflow dags unpause volka_dbt_snapshot_pipeline || true
+        # airflow dags unpause volka_dbt_marts_core_pipeline || true
+        # airflow dags unpause volka_dbt_marts_reporting_pipeline || true
+
+  postgres_db:
+    image: postgres:14
+    container_name: volka_postgres_db
+    ports: # Expose for local development/debugging
+      - "5433:5432" # Expose Postgres on host port 5433 to avoid conflict
+    environment:
+      - POSTGRES_USER=${DB_USER:-airflow_user}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-airflow_pass}
+      - POSTGRES_DB=${DB_NAME:-airflow_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${DB_USER:-airflow_user}", "-d", "${DB_NAME:-airflow_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: volka_redis
+    ports: # Expose for local development/debugging
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 50 # Give Redis more time to start on some systems
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: volka_airflow_webserver
+    command: ["webserver"] # Original command passed to decrypt_env.sh
+    ports: # Expose for local development/debugging
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:8080/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: volka_airflow_scheduler
+    command: ["scheduler"] # Original command
+    healthcheck: # Corrected hostname
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $(hostname)"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  airflow-worker:
+    <<: *airflow-common
+    container_name: volka_airflow_worker
+    command: ["celery", "worker"] # Original command
+    # You can scale workers using: docker-compose up --scale airflow-worker=3
+    healthcheck: # Corrected hostname
+      test: ["CMD-SHELL", "airflow jobs check --job-type WorkerJob --hostname $(hostname)"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  airflow-flower:
+    <<: *airflow-common
+    container_name: volka_airflow_flower
+    command: ["celery", "flower", "--broker=redis://redis:6379/0"] # Original command
+    ports: # Expose for local development/debugging
+      - "5555:5555"
+
+volumes:
+  postgres_data:
+  # redis_data: # Optional: if you want to persist Redis data
