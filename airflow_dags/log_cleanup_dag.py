@@ -14,27 +14,27 @@ DEFAULT_ARGS = {
     "retry_delay": timedelta(minutes=5),
 }
 
-# Define the base log directory within the Airflow container
-# This should match the volume mount for logs in your docker-compose.yml
+# The base directory for Airflow logs inside the container. This path should
+# correspond to the volume mount for logs in your Docker configuration.
 LOG_BASE_DIR = "/opt/airflow/logs"
 
-# Define the number of days of logs to keep
-# You can configure this via an Airflow Variable named 'log_cleanup_days_to_keep'
-# Defaulting to 7 days if the variable is not set.
+# The number of days to retain logs. This is configurable via an Airflow Variable
+# named 'log_cleanup_days_to_keep', with a default of 7 days.
 DAYS_TO_KEEP = int(Variable.get("log_cleanup_days_to_keep", 7))
 
-# Bash command to find and delete files/directories older than DAYS_TO_KEEP
-# -type f -or -type d : Target both files and directories
-# We group the type checks with parentheses to ensure correct boolean evaluation.
-# -mtime +$DAYS_TO_KEEP : Find files/directories modified more than DAYS_TO_KEEP days ago
-# -delete : Delete the found files/directories
-# Be cautious with the find -delete command! Test it first without -delete.
-# CLEANUP_COMMAND = f'find "{LOG_BASE_DIR}" -mindepth 1 \\( -type f -or -type d \\) -mtime +{DAYS_TO_KEEP} -delete'
-CLEANUP_COMMAND = f'find "{LOG_BASE_DIR}" -mindepth 1 -mmin +180 -exec rm -rf {{}} +'
+# The `find` command to locate and delete old log files and directories.
+# - `find "{LOG_BASE_DIR}"`: Search within the specified log directory.
+# - `-mindepth 1`: Prevents `find` from evaluating the base log directory itself,
+#   ensuring it is not deleted.
+# - `-mtime +{DAYS_TO_KEEP}`: Finds files and directories modified more than the
+#   specified number of days ago.
+# - `-delete`: A safe and efficient way to delete the found items. It is a
+#   built-in `find` action and is generally safer than using `-exec rm -rf {{}} +`.
+CLEANUP_COMMAND = f'find "{LOG_BASE_DIR}" -mindepth 1 -mtime +{DAYS_TO_KEEP} -delete'
 
-
-# Add a test command without -delete for debugging purposes
-CLEANUP_TEST_COMMAND = f'find "{LOG_BASE_DIR}" -mindepth 1 \\( -type f -or -type d \\) -mtime +{DAYS_TO_KEEP}'
+# A non-destructive version of the cleanup command for testing and debugging.
+# This command will only list the files and directories that would be deleted.
+CLEANUP_TEST_COMMAND = f'find "{LOG_BASE_DIR}" -mindepth 1 -mtime +{DAYS_TO_KEEP}'
 
 with DAG(
     dag_id=DAG_ID,
@@ -43,23 +43,31 @@ with DAG(
     start_date=days_ago(1),
     catchup=False,
     tags=["airflow_maintenance", "log_cleanup"],
+    doc_md="""
+    ### Airflow Log Cleanup
+
+    This maintenance DAG automatically cleans up old Airflow task logs to prevent
+    the log directory from growing indefinitely.
+
+    - **Configurability**: The log retention period is controlled by the Airflow
+      Variable `log_cleanup_days_to_keep` (default is 7 days).
+    - **Safety**: It uses the `find ... -delete` command, which is safer than
+      piping to `xargs rm`.
+    - **Permissions**: The Airflow worker user needs write/delete permissions
+      on the log volume (`/opt/airflow/logs`).
+    """
 ) as dag:
 
     clean_old_logs = BashOperator(
         task_id="clean_old_airflow_logs",
         bash_command=CLEANUP_COMMAND,
-        # Add a trigger_rule if you want this to run even if previous tasks in a theoretical chain fail
-        # trigger_rule="all_done",
+        doc_md="Deletes log files and empty directories older than the configured retention period."
     )
 
-    # Optional task to test the find command without deleting
-    # You can uncomment this and run it first to see what files would be deleted
+    # Optional task to test the find command without actually deleting anything.
+    # Uncomment this task to perform a dry run and see what would be deleted.
     # test_log_cleanup_find = BashOperator(
     #     task_id="test_log_cleanup_find",
     #     bash_command=CLEANUP_TEST_COMMAND,
+    #     doc_md="Lists all files and directories that are candidates for deletion."
     # )
-
-# Note: This DAG assumes that the user running the Airflow worker task has
-# the necessary file system permissions to delete files and directories
-# within the LOG_BASE_DIR. This is usually the 'airflow' user in standard
-# Docker setups, and the log directory volume mount should be writable by this user.

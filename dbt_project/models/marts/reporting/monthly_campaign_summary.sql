@@ -1,5 +1,3 @@
--- models/marts/reporting/monthly_campaign_summary.sql
-
 {{ config(
     materialized='view'
 ) }}

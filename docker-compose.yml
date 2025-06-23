@@ -11,13 +11,13 @@ x-airflow-common: &airflow-common
     - AIRFLOW__CORE__LOAD_EXAMPLES=False
     - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=True
     # --- PostgreSQL Backend ---
-    # These should match the postgres service below and your .env file
-    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${DB_USER:-airflow_user}:${DB_PASSWORD:-airflow_pass}@postgres_db:5432/${DB_NAME:-airflow_db}
-    - AIRFLOW__CORE__SECRET_KEY=${AIRFLOW__CORE__SECRET_KEY:-afac79b7bfe885fb0728b863f8c38a40} # Ensure this is set and consistent
+    # These variables are constructed from the .env file.
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+    - AIRFLOW__CORE__SECRET_KEY=${AIRFLOW__CORE__SECRET_KEY}
     # --- Celery Executor Configuration ---
     - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
-    - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://${DB_USER:-airflow_user}:${DB_PASSWORD:-airflow_pass}@postgres_db:5432/${DB_NAME:-airflow_db}
-    # --- Secrets Backend (Optional but good practice, ensure provider is installed if used) ---
+    - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+    # --- Secrets Backend (Optional but good practice, ensure provider is installed if used) --- db+postgresql
     # - AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
     # - AIRFLOW__SECRETS__BACKEND_KWARGS={"connections_prefix": "airflow/connections", "variables_prefix": "airflow/variables", "config_prefix": "airflow/config", "region_name": "eu-central-1"}
   volumes:
@@ -27,6 +27,7 @@ x-airflow-common: &airflow-common
     - ./sql:/opt/airflow/sql # Mount SQL files if needed
     - ./logs:/opt/airflow/logs # Persist logs
     - ./plugins:/opt/airflow/plugins # Persist plugins
+    - ./xlsx_excel_report:/opt/airflow/xlsx_excel_report # Persist report into xlxs_excel_output
   depends_on:
     postgres_db:
       condition: service_healthy
@@ -42,7 +43,7 @@ services:
     command:
       - -ec # Use -e to exit immediately if a command exits with a non-zero status.
       - |
-        airflow db upgrade
+        airflow db migrate # upgrade
         # Create admin user; `|| true` prevents the script from failing if the user already exists.
         airflow users create -u admin -p admin -r Admin -e admin@example.com -f admin -l user || true
 
@@ -101,10 +102,24 @@ services:
   airflow-worker:
     <<: *airflow-common
     container_name: volka_airflow_worker
-    command: ["celery", "worker"]
+    command:
+      - bash
+      - -c
+      - "echo '--- Airflow Worker Environment Variables ---' && env | grep 'DB_\\|AIRFLOW__' | sort && echo '------------------------------------------' && airflow celery worker"    
+    # command: ["celery", "worker"]
     # You can scale workers using: docker-compose up --scale airflow-worker=3
     healthcheck:
       test: ["CMD-SHELL", "airflow jobs check --job-type WorkerJob --hostname $(hostname)"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: volka_airflow_triggerer
+    command: ["triggerer"]
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type TriggererJob --hostname $(hostname)"]
       interval: 10s
       timeout: 10s
       retries: 5

@@ -180,10 +180,8 @@ After raw data is loaded, dbt orchestrates all in-database transformations. The 
     select * from renamed_and_cleaned
     ```
     </details>
-
-    **What this code does (in simple terms):**
-    This first transformation step is like tidying up a messy room. We take our historical data (from the dbt snapshot) and select only the most up-to-date version of each record (`dbt_valid_to is null`). We then clean it up by renaming confusing columns to be more intuitive (e.g., `campaigns_execution_date` becomes `report_date`) and converting money from cents into whole Euros. This creates a clean, reliable dataset that serves as the foundation for all our business reports.
-
+    
+    **Model Purpose:** This model acts as the first cleaning layer. It selects only the current, active records from the historical snapshot table and performs foundational transformations: renaming columns for business clarity, casting data types, and converting monetary values from cents to a standard currency unit. The result is a clean, atomic dataset that serves as a reliable source for all downstream business logic.
 *   **Gold Layer (Core Models):**
     *   **Path:** `dbt_project/models/marts/core/`
     *   **Purpose:** This layer creates the core data marts of the data warehouse. It takes the clean, atomic data from the Silver layer and models it into robust fact and dimension tables. These models represent key business entities and processes, serving as a stable and reliable "single source of truth" for analytics. They are typically materialized as tables for performance.
@@ -262,10 +260,8 @@ After raw data is loaded, dbt orchestrates all in-database transformations. The 
     select * from final_view
     ```
     </details>
-
-    **What this code does (in simple terms):**
-    This is the final step where we create the business-level summary. We take the clean daily data and roll it up into a monthly view for each campaign. We sum up the total spending, revenue, and user counts for the entire month. Then, we calculate the key performance metrics that the business cares about, like Return on Ad Spend (ROAS) and Cost Per Payer (CPP). The result is a simple, high-level view that directly answers critical business questions.
-
+    
+    **Model Purpose:** This model creates a business-ready summary. It aggregates the clean daily data from the Silver layer into a monthly view for each campaign, calculating key performance indicators (KPIs) like Return on Ad Spend (ROAS) and Cost Per Payer (CPP). Materialized as a view, it provides a simple, high-level summary that directly answers critical business questions without consuming additional storage.
 This structured approach ensures that business logic is centralized, tested, and well-documented within dbt, providing a single source of truth for reporting.
 
 #### dbt Project Configuration
@@ -352,19 +348,19 @@ The project relies on environment variables for configuration, especially for da
 
 | Variable | Description | Example Value |
 | :--- | :--- | :--- |
-| `POSTGRES_USER` | Username for the PostgreSQL database. | `admin` |
-| `POSTGRES_PASSWORD` | Password for the PostgreSQL database. | `admin` |
-| `POSTGRES_DB` | Name of the PostgreSQL database. | `volka_de_dw` |
-| `DB_HOST` | Hostname of the database (for the ETL script). | `postgres` |
+| `POSTGRES_USER` | Username for the PostgreSQL database. | `volka_user` |
+| `POSTGRES_PASSWORD` | Password for the PostgreSQL database. | `volkade` |
+| `POSTGRES_DB` | Name of the PostgreSQL database. | `volka_marketing_db` |
+| `DB_HOST` | Hostname of the database (for the ETL script). | `postgres_db` |
 | `DB_PORT` | Port for the database. | `5432` |
-| `DB_USER` | Username for the database (for the ETL script). | `admin` |
-| `DB_PASSWORD` | Password for the database (for the ETL script). | `admin` |
-| `DB_NAME` | Name of the database (for the ETL script). | `volka_de_dw` |
+| `DB_USER` | Username for the database (for the ETL script). | `volka_user` |
+| `DB_PASSWORD` | Password for the database (for the ETL script). | `volkade` |
+| `DB_NAME` | Name of the database (for the ETL script). | `volka_marketing_db` |
 | `API_KEY_SECRET_NAME` | Name of the secret in AWS Secrets Manager. | `test/sde_api/key` |
 | `AWS_REGION` | The AWS region for the Secrets Manager. | `eu-central-1` |
-| `AWS_ACCESS_KEY_ID` | Your AWS access key for local development. | `ASIA...` |
-| `AWS_SECRET_ACCESS_KEY` | Your AWS secret key for local development. | `...` |
-| `DECRYPTION_KEY` | The password used to encrypt/decrypt the `.env` file. | `your-secret-password` |
+| `AWS_ACCESS_KEY_ID` | Your AWS access key for local development. | `XXXXXXXXXXXXXXXXXXXXXXX` |
+| `AWS_SECRET_ACCESS_KEY` | Your AWS secret key for local development. | `XXXXXXXXXXXXXXXXXXXXXXX` |
+| `DECRYPTION_KEY` | The password used to encrypt/decrypt the `.env` file. | `volkade` |
 
 
 ### 6.2. Local Development Setup
@@ -410,6 +406,7 @@ After starting the services with `./start.sh`, follow these steps to execute a f
 ## 7. Reporting & Testing
 
 *   **Reporting**: The final, aggregated data is available in the `reporting.monthly_campaign_summary` view in the PostgreSQL database. An example query to generate the required Excel report is located at `sql/queries/october_2024_report_query.sql`.
+*   **Reporting**: The final, aggregated data is available in the `public.monthly_campaign_summary` view in the PostgreSQL database. An example query to generate the required Excel report is located at `sql/queries/october_2024_report_query.sql`.
 *   **Data Testing**: Run `dbt test` within the `dbt_project` directory to execute data quality tests.
 *   **Code Testing**: Python unit tests for the ETL script are located in the `tests/` directory and can be run with `pytest`.
 

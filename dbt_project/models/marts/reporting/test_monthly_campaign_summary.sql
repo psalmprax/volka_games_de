@@ -6,7 +6,7 @@
 }}
 
 WITH daily_performance AS (
-    SELECT * FROM {{ source('raw_data', 'campaign_performance_raw_appends') }}
+    SELECT * FROM {{ source('public', 'campaign_performance_raw_appends') }}
     -- SELECT * from {{ ref('stg_campaign_performance') }}
 
 ),

@@ -1,4 +1,4 @@
-{%- doc -%}
+{#
 This model generates a comprehensive date dimension table.
 It uses `dbt_utils.date_spine` to create a continuous sequence of dates,
 ensuring all necessary date attributes are available for analytical queries.
@@ -7,17 +7,16 @@ ensuring all necessary date attributes are available for analytical queries.
 
 **Purpose**: Provides a robust and reliable source of date-related attributes
 for joining with fact tables and enabling time-based analysis.
-{%- enddoc -%}
+ #}
 
 {{ config(materialized='table') }}
 
 with date_spine as (
     {{ dbt_utils.date_spine(
-        datepart="day", -- Generate one record per day
-        start_date="cast('2020-01-01' as date)", -- Start date for the dimension (e.g., beginning of data collection)
-        end_date="current_date + interval '5 year'" -- Extend 5 years into the future for forecasting/planning
-       )
-    }}
+        datepart="day",
+        start_date="cast('2020-01-01' as date)",
+        end_date=dbt.dateadd("year", 5, "current_date")
+    ) }}
 )
 select
     date_day as date_key, -- Primary key for the date dimension

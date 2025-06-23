@@ -14,7 +14,7 @@ volka_marketing_analytics:
       user: "{{ env_var('DBT_DB_USER', 'volka_user') }}"
       # IMPORTANT: The default password is for local development only.
       # In a real environment, this MUST be set via the DBT_DB_PASSWORD env var.
-      password: "{{ env_var('DBT_DB_PASSWORD', 'yoursecurepassword') }}"
+      password: "{{ env_var('DBT_DB_PASSWORD', 'volkade') }}"
       port: "{{ env_var('DBT_DB_PORT', '5432') | int }}"
       dbname: "{{ env_var('DBT_DB_NAME', 'volka_marketing_db') }}"
       schema: "{{ env_var('DBT_DB_SCHEMA', 'public') }}"

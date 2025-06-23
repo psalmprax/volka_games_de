@@ -1,12 +1,7 @@
-{%- doc -%}
-This model creates a dimension table for marketing ads.
-
-**Grain**: One row per unique ad, scoped to its campaign. An ad name is assumed to be unique within a campaign.
-
-**Purpose**: Provides a centralized, unique list of ads that can be joined
-with fact tables. It assigns a stable surrogate key to each ad and links it
-to its parent campaign via a foreign key.
-{%- enddoc -%}
+/*
+This model creates a dimension table for ads, containing a unique record for each ad name.
+It helps in analyzing performance per ad.
+*/
 
 with ad_source as (
 

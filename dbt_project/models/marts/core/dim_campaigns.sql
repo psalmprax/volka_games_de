@@ -1,4 +1,4 @@
-{%- doc -%}
+{#
 This model creates a dimension table for marketing campaigns.
 
 **Grain**: One row per unique campaign name.
@@ -6,7 +6,7 @@ This model creates a dimension table for marketing campaigns.
 **Purpose**: Provides a centralized, unique list of campaigns that can be joined
 with fact tables for filtering and grouping. It assigns a stable surrogate key
 to each campaign.
-{%- enddoc -%}
+ #}
 
 with distinct_campaigns as (
 
