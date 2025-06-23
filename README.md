@@ -21,10 +21,8 @@ This repository contains a comprehensive, production-ready data pipeline designe
   - [6.2. Local Development Setup](#62-local-development-setup)
   - [6.3. AWS Deployment (Terraform)](#63-aws-deployment-terraform)
 - [7. Reporting & Testing](#7-reporting--testing)
-  - [7.1. Reporting](#71-reporting)
-  - [7.2. Data Testing](#72-data-testing)
-  - [7.3. Code Testing](#73-code-testing)
-- 8. CI/CD Automation
+- [8. CI/CD Automation](#8-ci-cd-automation)
+
 
 ## 1. Core Technologies
 
