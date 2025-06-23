@@ -13,7 +13,7 @@ This repository contains a comprehensive, production-ready data pipeline designe
   - [3.3. Transformation & Modeling (dbt)](#33-transformation--modeling-dbt)
 - [4. Data Schema](#4-data-schema)
   - [`public.campaign_performance_raw_appends`](#publiccampaign_performance_raw_appends)
-- 5. Security
+- [5. Security](#5-security))
 - 6. Getting Started
   - 6.1. Environment Variables
   - 6.2. Local Development Setup
