@@ -13,12 +13,17 @@ This repository contains a comprehensive, production-ready data pipeline designe
   - [3.3. Transformation & Modeling (dbt)](#33-transformation--modeling-dbt)
 - [4. Data Schema](#4-data-schema)
   - [`public.campaign_performance_raw_appends`](#publiccampaign_performance_raw_appends)
-- [5. Security](#5-security))
-- 6. Getting Started
-  - 6.1. Environment Variables
-  - 6.2. Local Development Setup
-  - 6.3. AWS Deployment (Terraform)
-- 7. Reporting & Testing
+- [5. Security](#5-security)
+  - [5.1. Production](#51-production)
+  - [5.2. Local Development](#52-local-development)
+- [6. Getting Started](#6-getting-started)
+  - [6.1. Environment Variables](#61-environment-variables)
+  - [6.2. Local Development Setup](#62-local-development-setup)
+  - [6.3. AWS Deployment (Terraform)](#63-aws-deployment-terraform)
+- [7. Reporting & Testing](#7-reporting--testing)
+  - [7.1. Reporting](#71-reporting)
+  - [7.2. Data Testing](#72-data-testing)
+  - [7.3. Code Testing](#73-code-testing)
 - 8. CI/CD Automation
 
 ## 1. Core Technologies
