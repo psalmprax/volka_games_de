@@ -429,9 +429,9 @@ After starting the services with `./start.sh`, follow these steps to execute a f
 
 ## 7. Reporting & Testing
 
-*   **Reporting**: The final, aggregated data is available in the `public_reporting.monthly_campaign_summary` view in the PostgreSQL database. An example query to generate the required Excel report is located at `sql/queries/october_2024_report_query.sql`.
-*   **Data Testing**: Run `dbt test` within the `dbt_project` directory to execute data quality tests.
-*   **Code Testing**: Python unit tests for the ETL script are located in the `tests/` directory and can be run with `pytest`.
+1.   **Reporting**: The final, aggregated data is available in the `public_reporting.monthly_campaign_summary` view in the PostgreSQL database. An example query to generate the required Excel report is located at `sql/queries/october_2024_report_query.sql`.
+2.   **Data Testing**: Run `dbt test` within the `dbt_project` directory to execute data quality tests.
+3.   **Code Testing**: Python unit tests for the ETL script are located in the `tests/` directory and can be run with `pytest`.
 
 ## 8. CI/CD Automation
 
