@@ -368,27 +368,27 @@ The project relies on environment variables for configuration, especially for da
 | Variable | Description | Example Value |
 | :--- | :--- | :--- |
 | `POSTGRES_USER` | Username for the PostgreSQL database. | `volka_user` |
-| `POSTGRES_PASSWORD` | Password for the PostgreSQL database. | `volkade` |
+| `POSTGRES_PASSWORD` | Password for the PostgreSQL database. | `placeholder_for_real_password` |
 | `POSTGRES_DB` | Name of the PostgreSQL database. | `volka_marketing_db` |
 | `DB_HOST` | Hostname of the database (for the ETL script). | `postgres_db` |
 | `DB_PORT` | Port for the database. | `5432` |
 | `DB_USER` | Username for the database (for the ETL script). | `volka_user` |
-| `DB_PASSWORD` | Password for the database (for the ETL script). | `volkade` |
+| `DB_PASSWORD` | Password for the database (for the ETL script). | `placeholder_for_real_password` |
 | `DB_NAME` | Name of the database (for the ETL script). | `volka_marketing_db` |
 | `API_KEY_SECRET_NAME` | Name of the secret in AWS Secrets Manager. | `test/sde_api/key` |
 | `AWS_REGION` | The AWS region for the Secrets Manager. | `eu-central-1` |
 | `AWS_ACCESS_KEY_ID` | Your AWS access key for local development. | `XXXXXXXXXXXXXXXXXXXXXXX` |
 | `AWS_SECRET_ACCESS_KEY` | Your AWS secret key for local development. | `XXXXXXXXXXXXXXXXXXXXXXX` |
-| `DECRYPTION_KEY` | The password used to encrypt/decrypt the `.env` file. | `volkade` |
+| `DECRYPTION_KEY` | The password used to encrypt/decrypt the `.env` file. | `placeholder_for_real_password` |
 
 
 ### 6.2. Local Development Setup
 
 1.  **Prerequisites**: Docker and Docker Compose.
 2.  **Clone Repository**: `git clone ...`
-3.  **Create Environment File**: Copy `.env.template` to `.env` and fill in the database credentials.
+3.  **Create Environment File**: Create `.env` and fill in the database credentials.
 4.  **Encrypt Environment**: Run `./encrypt_env.sh`. You will be prompted for a password. This creates `.env.encrypted`.
-5.  **Set Decryption Key**: Export the password you just created as an environment variable: `export DECRYPTION_KEY="your-password-here"`.
+5.  **Set Decryption Key**: Export the password you just created as an environment variable: `export DECRYPTION_KEY="placeholder_for_real_password"`.
 6.  **Start Services**: Run the startup script: `./start.sh`. This will build the image, set permissions, and launch all services.
     *   Airflow UI: `http://localhost:8080` (user: `admin`, pass: `admin`)
     *   Flower UI: `http://localhost:5555`
@@ -398,8 +398,8 @@ The project relies on environment variables for configuration, especially for da
 After starting the services with `./start.sh`, follow these steps to execute a full pipeline run:
 
 1.  **Access Airflow UI**: Navigate to `http://localhost:8080`. Log in with the default credentials (`admin`/`admin`).
-2.  **Enable the DAG**: Find the `volka_main_orchestrator_pipeline` DAG in the list and un-pause it using the toggle on the left.
-3.  **Trigger a Run**: Click the "Play" button (Trigger DAG) next to the DAG name. You can leave the default configuration.
+2.  **Check the DAG**: Find the `volka_main_orchestrator_pipeline` DAG in the list and check the state.
+3.  **A Trigger Run**: Dag is triggered from `./start.sh`. You can leave the default configuration.
 4.  **Monitor Execution**: Go to the "Grid" view to watch the tasks execute. You will see `create_raw_table`, `run_marketing_etl`, `dbt_deps`, and then the triggered dbt DAGs run in sequence.
 5.  **Verify the Data**: Once the pipeline completes successfully, you can connect to the local PostgreSQL database to inspect the results. You can use a database client or the command line:
     ```bash
