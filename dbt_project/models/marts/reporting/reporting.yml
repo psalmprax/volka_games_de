@@ -1,0 +1,21 @@
+version: 2
+models:
+  - name: monthly_campaign_summary
+    description: "Aggregates daily campaign performance data to a monthly level and calculates key business KPIs like ROAS and CPI."
+    columns:
+      - name: report_month
+        tests:
+          - not_null
+      - name: campaign_name
+        tests:
+          - not_null
+      - name: roas_3d
+        description: "3-Day Return on Ad Spend. Should not be negative."
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+      - name: cpi
+        description: "Cost Per Install. Should be a positive value."
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
