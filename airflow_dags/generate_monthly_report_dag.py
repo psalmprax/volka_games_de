@@ -48,7 +48,7 @@ def get_most_recent_dag_run(execution_date, **kwargs):
 @dag(
     dag_id="generate_dynamic_marketing_reports",
     start_date=datetime(2024, 10, 1),
-    schedule_interval="0 5 * * *",  # Runs at the beginning of each month. "@monthly" but for testing, it runs every 5 minutes
+    schedule_interval="*/5 * * * *",  # Runs at the beginning of each month. "@monthly" but for testing, it runs every 5 minutes
     catchup=False,
     tags=["volka", "marketing", "reporting", "dynamic"],
     doc_md="""
