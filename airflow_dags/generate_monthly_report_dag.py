@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from airflow.models import DagRun
 from airflow import settings
+from airflow.exceptions import AirflowSkipException
 
 import glob
 import pandas as pd
@@ -26,20 +27,28 @@ def get_most_recent_dag_run(execution_date, **kwargs):
     Callback for ExternalTaskSensor to find the latest execution date of the target DAG.
     This is used when the sensor should wait for the most recent run of the upstream
     DAG to complete, rather than a run with the same logical execution date. This is
-    useful if the upstream DAG runs on a different schedule or might be triggered
-    manually.
+    useful if the upstream DAG runs on a different schedule.
+
+    Note: This function returns a list of datetimes. If no upstream run is found, it
+    returns an empty list. In many Airflow versions, this will cause the sensor to
+    succeed immediately. This is a workaround to prevent a crash when the function
+    returns `None` on older Airflow versions.
     """
     session = settings.Session()
     recent_run = session.query(DagRun).filter(
         DagRun.dag_id == kwargs['task'].external_dag_id
     ).order_by(DagRun.execution_date.desc()).first()
-    return recent_run.execution_date if recent_run else None # Returns None if no previous run exists
+    if recent_run:
+        return [recent_run.execution_date]
+    else:
+        # Raise an exception to keep the sensor poking (will not succeed)
+        raise AirflowSkipException("No upstream run found yet; will try again.")
 
 
 @dag(
     dag_id="generate_dynamic_marketing_reports",
     start_date=datetime(2024, 10, 1),
-    schedule_interval="@monthly",  # Runs at the beginning of each month.
+    schedule_interval="0 5 * * *",  # Runs at the beginning of each month. "@monthly" but for testing, it runs every 5 minutes
     catchup=False,
     tags=["volka", "marketing", "reporting", "dynamic"],
     doc_md="""
@@ -67,7 +76,7 @@ def generate_monthly_report_dag():
         sql_file_path: str,
         report_base_name: str,
         output_dir: Path,
-        ds_nodash: str,
+        data_interval_end,  # Use the end of the data interval for more intuitive naming
         postgres_conn_id: str = "postgres_default",
     ) -> str:
         """
@@ -76,7 +85,7 @@ def generate_monthly_report_dag():
         :param sql_file_path: Path to the specific SQL file for this task instance.
         :param report_base_name: The base name for the output report file.
         :param output_dir: The directory where the Excel report will be saved.
-        :param ds_nodash: The execution date as a string (YYYYMMDD), for file naming.
+        :param data_interval_end: The end of the data interval for the DAG run.
         :param postgres_conn_id: The Airflow connection ID for the PostgreSQL database.
         """
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -99,7 +108,8 @@ def generate_monthly_report_dag():
             logging.warning(f"Query from {report_base_name} returned no data. No Excel file will be generated.")
             return "No data found, report not generated."
 
-        output_file_path = output_dir / f"{report_base_name}_{ds_nodash}.xlsx"
+        report_date_str = datetime.now().strftime('%Y%m%d')
+        output_file_path = output_dir / f"{report_base_name}_{report_date_str}.xlsx"
 
         try:
             df.to_excel(output_file_path, index=False, engine="openpyxl")
@@ -117,11 +127,11 @@ def generate_monthly_report_dag():
         external_dag_id="volka_dbt_marts_reporting_pipeline",
         external_task_id=f'dbt_test_marts_reporting',
         execution_date_fn=get_most_recent_dag_run,
-        allowed_states=["success", "skipped"],
-        failed_states=["upstream_failed", "failed"],
+        allowed_states=["success"],
+        failed_states=["failed"],
         mode="reschedule",      # Frees up a worker slot while waiting for the upstream DAG.
         poke_interval=30,       # How often to check for the upstream DAG's status.
-        deferrable=True,        # Use deferrable mode for higher efficiency and lower resource use.
+        deferrable=False,       # Must be False to use 'reschedule' mode. Deferrable mode requires a running Triggerer.
         timeout=60 * 60 * 24,   # Max wait time for the upstream DAG (24 hours).
         on_success_callback=log_task_start,
     )

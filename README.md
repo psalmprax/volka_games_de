@@ -80,13 +80,13 @@ graph TD
 
 #### Why Infrastructure as Code with Terraform?
 
-Choosing to manage our infrastructure with Terraform is a strategic decision that provides significant advantages over manual setup or console-based configuration:
+Managing infrastructure with Terraform is a strategic choice that provides key advantages over manual configuration:
 
 *   **Repeatability & Consistency**: Every environment, from development to production, is provisioned from the same codebase. This eliminates "it works on my machine" problems and ensures consistency, drastically reducing deployment errors.
-*   **Automation & Speed**: Terraform enables the entire infrastructure to be created, updated, or destroyed with a few commands. This is critical for CI/CD pipelines, allowing for automated deployments and rapid iteration.
-*   **Version Control & Collaboration**: By storing infrastructure definitions in Git, we gain a full history of all changes. We can use pull requests to review infrastructure modifications, just like application code, fostering collaboration and improving quality.
-*   **Disaster Recovery**: In the event of a regional failure or catastrophic error, Terraform can recreate the entire production environment from scratch in a new region within minutes, not hours or days. This provides a robust and predictable disaster recovery plan.
-*   **Modularity & Reusability**: The infrastructure is broken down into logical, reusable modules. This makes the system easier to understand, maintain, and scale. Adding a new service or environment becomes a matter of composing existing modules.
+*   **Automation & Speed**: Enables rapid creation, updates, or destruction of the entire infrastructure via commands, which is essential for CI/CD and fast iteration.
+*   **Version Control & Collaboration**: Treats infrastructure as code in Git, providing a full change history and enabling peer review of infrastructure changes through pull requests.
+*   **Disaster Recovery**: Allows for the complete recreation of the production environment in a new region within minutes, ensuring a robust and predictable recovery plan.
+*   **Modularity & Reusability**: Decomposes the infrastructure into reusable modules, simplifying maintenance, scaling, and the addition of new services.
 
 | Service                       | Role in Pipeline                                                                                             | Justification (Cost & Performance)                                                                                                                              |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -98,7 +98,7 @@ Choosing to manage our infrastructure with Terraform is a strategic decision tha
 | **Application Load Balancer** | **Secure Web Access**: Exposes the Airflow UI securely to the internet over HTTPS.                             | **Cost-Effective**: Pay-per-use. **High Capability**: Provides a stable, secure entry point with health checks and SSL termination.                               |
 | **Amazon S3**                 | **Asset & Backup Storage**: Stores raw data backups and could host Airflow DAGs.                               | **Cost-Effective**: Extremely cheap and durable object storage. **High Capability**: Highly available and scalable.                                               |
 | **AWS Secrets Manager**       | **Centralized Secrets**: Securely stores and manages all credentials (API keys, DB passwords).                 | **Cost-Effective**: Low cost per secret. **High Capability**: Enhances security by removing secrets from code and providing fine-grained access control via IAM. |
-| **IAM**                       | **Permissions Management**: Defines granular permissions for every service, adhering to the principle of least privilege. | **Security Best Practice**: Essential for a secure cloud environment.                                                                                             |
+| **IAM**                       | **Permissions Management**: Defines granular permissions for every service, adhering to the principle of least privilege. | **Security Best Practice**: Enforces the principle of least privilege so components can only access the resources they absolutely need.                           |
 | **CloudWatch**                | **Logging & Monitoring**: Aggregates logs from all Airflow components and provides metrics for monitoring.     | **Operational Excellence**: Centralized logging is critical for debugging and monitoring pipeline health.                                                         |
 
 ### 2.2. Local Development Environment (Docker)
@@ -144,12 +144,12 @@ After raw data is loaded, dbt orchestrates all in-database transformations. The 
 
 *   **Silver Layer (Staging Models):**
     *   **Path:** `dbt_project/models/staging/`
-    *   **Purpose:** Models in this layer select only the *current, active records* from the historical snapshot table (where `dbt_valid_to is null`). They perform light, foundational transformations to clean and prepare the data for analytics. This includes:
+    *   **Purpose:** This layer creates clean, trustworthy, and atomic datasets for downstream use. Models here select only the *current, active records* from the historical snapshot table (`where dbt_valid_to is null`) and perform foundational transformations:
         *   Casting data to the correct types (e.g., `NUMERIC`, `INTEGER`).
         *   Renaming columns for business clarity (e.g., `campaigns_execution_date` -> `report_date`).
         *   Converting monetary values from cents to a standard currency unit (e.g., EUR).
         *   Standardizing categorical values.
-    *   The goal of the Silver layer is to create a clean, atomic, and trustworthy dataset that serves as a reliable source for all downstream business logic.
+    *   The goal is to create a reliable "single source of truth" for all business logic.
 
     <details>
     <summary><b>Click to see an example Staging Model: <code>stg_campaign_performance.sql</code></b></summary>
@@ -159,7 +159,7 @@ After raw data is loaded, dbt orchestrates all in-database transformations. The 
     
     with source as (
         -- Use the dbt snapshot to get the current version of each record
-        select * from {{ ref('scd_campaign_performance') }}
+        select * from {{ ref('scd_campaign_performance_history') }}
         where dbt_valid_to is null -- This filter selects only the currently active records
     ),
 
@@ -201,25 +201,22 @@ After raw data is loaded, dbt orchestrates all in-database transformations. The 
     
     select * from renamed_and_cleaned
     ```
+    *This model cleans the raw campaign data, selecting only the latest records from the snapshot and preparing them for analysis by renaming columns and converting currency units.*
     </details>
-    
-    **Model Purpose:** This model acts as the first cleaning layer. It selects only the current, active records from the historical snapshot table and performs foundational transformations: renaming columns for business clarity, casting data types, and converting monetary values from cents to a standard currency unit. The result is a clean, atomic dataset that serves as a reliable source for all downstream business logic.
 *   **Gold Layer (Core Models):**
     *   **Path:** `dbt_project/models/marts/core/`
     *   **Purpose:** This layer creates the core data marts of the data warehouse. It takes the clean, atomic data from the Silver layer and models it into robust fact and dimension tables. These models represent key business entities and processes, serving as a stable and reliable "single source of truth" for analytics. They are typically materialized as tables for performance.
 
 *   **Gold Layer (Reporting Models):**
     *   **Path:** `dbt_project/models/marts/reporting/`
-    *   **Purpose:** This layer contains the final business logic. It aggregates the well-structured data from the **Core Models** into denormalized tables or views, often called "data marts," which are optimized for specific reporting and business intelligence use cases.
-    *   **Key Model (`monthly_campaign_summary`):** This model is a prime example. It is materialized as a **view** and rolls up data to a monthly level for each campaign, calculating critical business KPIs like ROAS, CPI, and Retention Rate.
-
+    *   **Purpose:** This layer contains the final, business-facing logic. It aggregates data from the **Core Models** into denormalized tables or views ("data marts") optimized for specific reporting and BI use cases.
+    *   **Example Model (`monthly_campaign_summary`):** This model is a prime example, materialized as a **view**. It rolls up daily data to a monthly level for each campaign, calculating critical business KPIs like ROAS, CPI, and Retention Rate.
 
     <details>
     <summary><b>Click to see an example Reporting Model: <code>monthly_campaign_summary.sql</code></b></summary>
 
     ```sql
     -- models/marts/reporting/monthly_campaign_summary.sql
-
     {{ config(
         materialized='view'
     ) }}
@@ -281,9 +278,8 @@ After raw data is loaded, dbt orchestrates all in-database transformations. The 
 
     select * from final_view
     ```
+    *This view creates a business-ready summary by aggregating clean daily data into a monthly report for each campaign, calculating key performance indicators (KPIs) like ROAS and CPP. As a view, it provides a high-level summary without consuming additional storage.*
     </details>
-    
-    **Model Purpose:** This model creates a business-ready summary. It aggregates the clean daily data from the Silver layer into a monthly view for each campaign, calculating key performance indicators (KPIs) like Return on Ad Spend (ROAS) and Cost Per Payer (CPP). Materialized as a view, it provides a simple, high-level summary that directly answers critical business questions without consuming additional storage.
 This structured approach ensures that business logic is centralized, tested, and well-documented within dbt, providing a single source of truth for reporting.
 
 #### dbt Project Configuration
@@ -332,7 +328,7 @@ The dbt project's behavior is defined by two key files: `dbt_project.yml` and `p
     ```
 
 ## 4. Data Schema
-The raw data extracted from the API is loaded into the `campaign_performance_raw_appends` table in PostgreSQL. This table is a simple, append-only log of all data fetched from the API. A `dbt snapshot` is then used to build a historical (SCD Type 2) table from this raw data.
+The Python ETL script loads raw API data into the `campaign_performance_raw_appends` table, which serves as an append-only log. From this raw table, `dbt snapshot` builds a historical (SCD Type 2) table to track changes over time.
 
 ### `public.campaign_performance_raw_appends`
 | Column Name                 | Data Type (PostgreSQL)     | Description                                                                                                                            |
@@ -390,10 +386,14 @@ The project relies on environment variables for configuration, especially for da
 1.  **Prerequisites**: Docker and Docker Compose.
 2.  **Clone Repository**: `git clone ...`
 3.  **Create Environment File**: Create `.env` and fill in the database credentials.
-4.  **Encrypt Environment**: Run `./encrypt_env.sh`. You will be prompted for a password. This creates `.env.encrypted`.
-5.  **Set Decryption Key**: Export the password you just created as an environment variable: `export DECRYPTION_KEY="placeholder_for_real_password"`.
-6.  **Start Services**: Run the startup script: `./start.sh`. This will build the image, set permissions, and launch all services.
-    *   Airflow UI: `http://localhost:8080` (user: `admin`, pass: `admin`)
+4.  **Encrypt Environment & Set Key**:
+    *   Run `./encrypt_env.sh`. You will be prompted to create a password. This creates the `.env.encrypted` file.
+    *   Export the password you just created as an environment variable for the `start.sh` script to use:
+      ```bash
+      export DECRYPTION_KEY="your-chosen-password"
+      ```
+5.  **Start Services**: Run the startup script: `./start.sh`. This will build the image, set permissions, and launch all services.
+    *   Airflow UI: `http://localhost:8080` (user: `admin`, pass: `admin`).
     *   Flower UI: `http://localhost:5555`
 
 #### Running the Pipeline Locally
@@ -427,17 +427,32 @@ After starting the services with `./start.sh`, follow these steps to execute a f
 
 ## 7. Reporting & Testing
 
-1.   **Reporting**: The final, aggregated data is available in the `public_reporting.monthly_campaign_summary` view in the PostgreSQL database. An example query to generate the required Excel report is located at `sql/queries/october_2024_report_query.sql`.
-2.   **Data Testing**: Run `dbt test` within the `dbt_project` directory to execute data quality tests.
+1.   **Reporting**: The final, aggregated data is available in the `public.monthly_campaign_summary` view in the PostgreSQL database. An example query to generate the required Excel report is located at `sql/queries/october_2024_report_query.sql`.
+2.   **Data Testing**: Run `dbt test` within the `dbt_project` directory to execute data quality tests defined in the model `.yml` files.
 3.   **Code Testing**: Python unit tests for the ETL script are located in the `tests/` directory and can be run with `pytest`.
 
 ## 8. CI/CD Automation
 
-A production-ready pipeline should include a Continuous Integration and Continuous Deployment (CI/CD) workflow to automate testing and deployment. While not implemented in this repository, a typical CI/CD pipeline (e.g., using GitHub Actions) would include the following stages:
+This repository includes a Continuous Integration (CI) pipeline using GitHub Actions, defined in `.github/workflows/ci.yml`. This pipeline automatically runs on every push and pull request to the `master` branch to ensure code quality, correctness, and consistency before any changes are merged.
 
-1.  **Lint & Format Check**: On every push, run linters like `flake8` or `black` for Python and `sqlfluff` for SQL to ensure code quality and consistency.
-2.  **Unit & Integration Tests**: Execute `pytest` to run unit tests for the Python ETL script. This validates transformation logic and utility functions in isolation.
-3.  **Build Docker Image**: If tests pass, build the custom Airflow Docker image and push it to a container registry like Amazon ECR.
-4.  **dbt Tests**: Run `dbt build` and `dbt test` against a dedicated CI database to ensure all dbt models build correctly and pass their data quality tests.
-5.  **Deploy to Staging**: On merge to a `develop` or `staging` branch, automatically apply Terraform changes to a staging environment on AWS.
-6.  **Deploy to Production**: On merge to the `main` branch (often after manual approval), apply Terraform changes to the production environment.
+The CI pipeline executes the following key stages:
+
+1.  **Environment Setup**: A temporary PostgreSQL database is spun up as a service container. This provides a clean, isolated environment for running integration tests against a real database, ensuring that tests are reliable and independent of any local setup.
+2.  **Lint & Format Check**: The pipeline enforces a consistent code style across the project:
+    *   **Python**: Runs `flake8` for style guide enforcement and `black --check` to ensure code is formatted correctly.
+    *   **SQL**: Runs `sqlfluff` to lint all dbt models, maintaining high-quality and readable SQL.
+3.  **Python Unit Tests**: Executes the Python test suite using `pytest`. This validates the core logic of the ETL script, such as data cleaning and transformation functions, in isolation.
+4.  **dbt Integration Tests**: The pipeline runs `dbt build` against the temporary PostgreSQL database. This is a comprehensive step that:
+    *   Installs all dbt package dependencies (`dbt deps`).
+    *   Builds all dbt models, snapshots, and seeds.
+    *   Runs all dbt tests (e.g., `not_null`, `unique`, relationship tests) defined in the project.
+    This ensures that the entire dbt transformation logic is sound and that the data models build correctly from end to end.
+
+This CI setup guarantees that all new code is automatically validated, significantly reducing the risk of introducing bugs or regressions.
+
+#### Future Work: Continuous Deployment (CD)
+
+While the CI pipeline is fully implemented, the next step for a complete automation workflow would be to add Continuous Deployment. A CD pipeline would extend the current workflow to automatically deploy the application to AWS environments:
+
+*   **Build & Push Docker Image**: After all tests pass, the pipeline would build the custom Airflow Docker image and push it to Amazon ECR.
+*   **Deploy to Staging/Production**: On a merge to a specific branch (e.g., `develop` for staging, `master` for production), the pipeline would trigger a `terraform apply` to update the infrastructure on AWS.

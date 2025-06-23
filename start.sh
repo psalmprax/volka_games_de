@@ -1,28 +1,18 @@
 #!/bin/bash
 
-# sudo chown -R "$(whoami):$(id -gn)" .
-# The Airflow container runs as user with UID 50000. To prevent permission errors on
-# mounted volumes (e.g., dags, logs), we set the ownership of the current directory
-# to match this user.
-echo "Setting volume permissions (may require sudo)..."
-sudo chown -R "$(whoami):$(id -gn)" .
-echo $USER
-
 # Clean up previous log files to ensure a fresh start.
 echo "Cleaning up old log files..."
-rm -rf ./logs/*
+sudo rm -rf ./logs/*
 
-# Set correct permissions for mounted volumes.
-# The Airflow container runs as UID 50000. This prevents permission errors
-# on the specific directories mounted into the containers.
+# Set correct permissions for mounted volumes. The official Airflow Docker image
+# runs as the 'airflow' user with UID 50000. This command sets the ownership
+# of the mounted directories to match, preventing permission errors inside the containers.
 echo "Setting volume permissions for Airflow container (may require sudo)..."
 sudo chown -R 50000:0 ./airflow_dags ./etl ./dbt_project ./sql ./logs ./plugins ./xlsx_excel_report
 
-# Stop existing services using `down` to preserve volumes (database data) and
-# downloaded images for faster restarts.
-# For a full reset (including data), run: docker-compose down -v --rmi local
-echo "Stopping existing services (if any)..."
-docker-compose down -v --rmi local
+# Stop existing services if they are running.
+echo "Stopping existing Docker services (if any)..."
+docker-compose down
 
 # Start all services, building images if they are out of date.
 echo "Starting services and building images if needed..."
@@ -44,14 +34,15 @@ if [ -z "$worker_container_id" ]; then
   exit 1
 fi
 
-# Set Airflow Variables needed by the dbt DAG factory. This is idempotent.
-echo "Setting Airflow variables for dbt..."
+# Configure Airflow connections and variables inside the running container.
+# This is idempotent and safe to run multiple times.
+echo "Configuring Airflow connections and variables..."
 today=$(date +%Y%m%d)
 docker exec "$worker_container_id" bash -c "
   set -e # Exit immediately if a command fails
 
   echo \"--> Adding/Updating Airflow PostgreSQL connection 'postgres_default'...\"
-  # The variables like \$DB_HOST are escaped with a single backslash (\)
+  # Variables like \$DB_HOST are escaped with a backslash (\)
   # to ensure they are evaluated by the shell *inside* the container, not the local shell.
   airflow connections add postgres_default --conn-type postgres --conn-host \"\$DB_HOST\" --conn-schema \"\$DB_NAME\" --conn-login \"\$DB_USER\" --conn-password \"\$DB_PASSWORD\" --conn-port \"\$DB_PORT\"
 
@@ -64,7 +55,7 @@ docker exec "$worker_container_id" bash -c "
   airflow variables set approve_volka_dbt_staging_pipeline_${today} true
 
   echo '--> Unpausing all available DAGs...'
-  # The command substitution \$(...) and variables like \$dag_id and \$1 are escaped
+  # The command substitution \$(...) and variables like \$dag_id are escaped
   # to ensure they are evaluated by the shell *inside* the container, not by the local shell.
   for dag_id in \$(airflow dags list | awk 'NR > 2 {print \$1}'); do
     echo \"Unpausing DAG: \$dag_id\"

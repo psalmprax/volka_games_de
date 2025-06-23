@@ -1,5 +1,4 @@
 #!/bin/bash
-# encrypt_env.sh
 # This script encrypts the .env file into .env.encrypted using openssl.
 
 PLAINTEXT_ENV_FILE=".env"
@@ -26,7 +25,7 @@ openssl enc -aes-256-cbc -salt -in "$PLAINTEXT_ENV_FILE" -out "$ENCRYPTED_ENV_FI
 
 if [ $? -eq 0 ]; then
   echo "Encryption successful: '$ENCRYPTED_ENV_FILE' created."
-  echo "IMPORTANT: Remember the encryption key you used. It will be needed for decryption."
+  echo "IMPORTANT: Remember to export the key as DECRYPTION_KEY for the start.sh script to use."
 else
   echo "Error: Encryption failed."
   exit 1
