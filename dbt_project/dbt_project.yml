@@ -17,6 +17,9 @@ test-paths: ["tests"]
 seed-paths: ["seeds"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
+# Specifies where dbt packages are installed. This can help dbt correctly
+# distinguish project code from package code, preventing parsing errors.
+packages-install-path: "dbt_packages"
 # Specifies where compiled SQL and other artifacts are stored.
 target-path: "target"
 # Specifies which directories to remove when running `dbt clean`.

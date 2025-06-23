@@ -1,4 +1,4 @@
-{%- doc -%}
+{#
 This model creates a daily performance fact table, providing a central place for analytics.
 
 **Grain**: One row per campaign, per ad, per day, representing the most current performance data.
@@ -11,7 +11,7 @@ This model creates a daily performance fact table, providing a central place for
 - Builds on the cleaned `stg_campaign_performance` model, which provides current data with correct data types.
 - Joins to dimension tables to get surrogate keys for robust dimensional analysis.
 - Includes key performance metrics and lifeday cohort data in standard currency units (EUR).
-{%- enddoc -%}
+ #}
 
 with performance as (
     -- Use the staging model which provides cleaned, correctly-typed, and current data
@@ -75,7 +75,7 @@ select
     performance.updated_at_timestamp
 
 from performance
-left join dim_dates on performance.report_date = dim_dates.date_day -- Join on the actual date column for accuracy
+left join dim_dates on performance.report_date = dim_dates.date_key -- Join on the date column, which serves as the key in this dimension.
 left join dim_campaigns on performance.campaign_name = dim_campaigns.campaign_name
-left join dim_ads on performance.ad_name = dim_ads.ad_name
-    and dim_campaigns.campaign_key = dim_ads.campaign_fk -- Join on campaign foreign key to ensure ad uniqueness
+-- Join to the ad dimension by regenerating the surrogate key. This is more robust than joining on natural keys.
+left join dim_ads on dim_ads.ad_key = {{ dbt_utils.generate_surrogate_key(['performance.campaign_name', 'performance.ad_name']) }}

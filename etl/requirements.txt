@@ -1,7 +1,14 @@
-requests
-pandas
-psycopg2-binary
-boto3
-apache-airflow-providers-postgres
+# Application and data processing dependencies
+requests==2.31.0
+pandas==2.1.4
+psycopg2-binary==2.9.9
+boto3==1.34.106
 PyYAML>=6.0
-python-dotenv # For local development to load .env files
+python-dotenv==1.0.1
+openpyxl
+
+# dbt dependencies
+# Version 1.8.2 is compatible with Airflow 2.9.2 constraints
+dbt-core==1.8.2
+dbt-postgres==1.8.2
+# dbt-utils==1.1.1

@@ -64,18 +64,27 @@ def create_dbt_dag(dag_config: dict) -> DAG:
     )
         
     with dag:
-        # This will be the first task in the chain, if any.
-        chain_head = None
+        # Common dbt command components from Airflow Variables
+        dbt_project_dir = "{{ var.value.get('dbt_project_dir', '/opt/airflow/dbt_project') }}"
+        dbt_profiles_dir = "{{ var.value.get('dbt_profiles_dir', '/opt/airflow/dbt_project') }}"
+
+        # Task to ensure dbt dependencies are installed.
+        # This makes the DAG self-contained and robust for manual runs.
+        dbt_deps = BashOperator(
+            task_id="dbt_deps",
+            bash_command=f"cd {dbt_project_dir} && dbt deps --profiles-dir {dbt_profiles_dir}",
+        )
+
         # This will be the last task in the chain, to link new tasks.
-        chain_tail = None
+        chain_tail = dbt_deps
 
         if dag_config.get("requires_manual_start"):
             wait_for_approval = PythonSensor(
                 task_id="wait_for_manual_approval",
                 python_callable=check_approval_variable,
                 op_kwargs={'dag_id': dag.dag_id, 'ds_nodash': '{{ ds_nodash }}'},
-                poke_interval=60,  # Check every 60 seconds
-                timeout=60 * 60 * 24,  # Timeout after 24 hours
+                poke_interval=60,
+                timeout=60 * 60 * 24,
                 mode='poke',
                 doc_md="""
                 ### Wait for Manual Approval
@@ -85,31 +94,21 @@ def create_dbt_dag(dag_config: dict) -> DAG:
                 The value can be anything (e.g., `true`).
                 """
             )
-            chain_head = wait_for_approval
+            chain_tail >> wait_for_approval
             chain_tail = wait_for_approval
         
         for task_config in dag_config['commands']:
             dbt_command = task_config['command']
             task_id = f"dbt_{dbt_command}_{dag_config['name']}"
             
-            # Build the dbt command as a list of parts to be joined with spaces
-            dbt_command_parts = [f"dbt {dbt_command}"]
+            selector_flag = f"--select {task_config['selector']}" if task_config.get('selector') else ""
+            profiles_dir_flag = f"--profiles-dir {dbt_profiles_dir}"
+            target_flag = "--target {{ var.value.get('dbt_target_profile', 'dev') }}"
             
-            selector = task_config.get('selector')
-            if selector:
-                # No extra quotes are needed here; the shell handles the argument correctly.
-                dbt_command_parts.append(f"--select {selector}")
-            
-            # Add common dbt flags using Jinja templating
-            dbt_command_parts.append("--profiles-dir {{ var.value.get('dbt_profiles_dir', '/opt/airflow/dbt_project') }}")
-            dbt_command_parts.append("--target {{ var.value.get('dbt_target_profile', 'dev') }}")
+            final_dbt_command = f"dbt {dbt_command} {selector_flag} {profiles_dir_flag} {target_flag}"
 
-            # Join the dbt command parts with spaces to form a single command
-            final_dbt_command = " ".join(dbt_command_parts)
-
-            # Construct the full bash command, changing directory first
             bash_command = (
-                "cd {{ var.value.get('dbt_project_dir', '/opt/airflow/dbt_project') }} && "
+                f"cd {dbt_project_dir} && "
                 f"{final_dbt_command}"
             )
             
@@ -118,12 +117,8 @@ def create_dbt_dag(dag_config: dict) -> DAG:
                 bash_command=bash_command,
             )
             
-            if chain_tail:
-                chain_tail >> dbt_task
-            else:  # This is the first task in the whole DAG
-                chain_head = dbt_task
-            
-            chain_tail = dbt_task  # The new task is now the end of the chain
+            chain_tail >> dbt_task
+            chain_tail = dbt_task
             
         # Add a cleanup task at the end if approval was required
         if dag_config.get("requires_manual_start") and chain_tail:
