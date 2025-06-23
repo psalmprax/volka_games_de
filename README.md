@@ -2,6 +2,25 @@
 
 This repository contains a comprehensive, production-ready data pipeline designed to ingest marketing campaign data from an API, process it, and load it into a data warehouse for analytics and reporting. The entire infrastructure is defined as code (IaC) using Terraform for repeatable, automated deployments on AWS.
 
+## Table of Contents
+- [1. Core Technologies](#1-core-technologies)
+- [2. Architecture Deep Dive](#2-architecture-deep-dive)
+  - [2.1. Production Architecture (AWS & Terraform)](#21-production-architecture-aws--terraform)
+  - [2.2. Local Development Environment (Docker)](#22-local-development-environment-docker)
+- [3. Data Pipeline Workflow](#3-data-pipeline-workflow)
+  - [3.1. Orchestration with Airflow](#31-orchestration-with-airflow)
+  - [3.2. Extract & Load (Python ETL)](#32-extract--load-python-etl)
+  - [3.3. Transformation & Modeling (dbt)](#33-transformation--modeling-dbt)
+- [4. Data Schema](#4-data-schema)
+  - [`public.campaign_performance_raw_appends`](#publiccampaign_performance_raw_appends)
+- 5. Security
+- 6. Getting Started
+  - 6.1. Environment Variables
+  - 6.2. Local Development Setup
+  - 6.3. AWS Deployment (Terraform)
+- 7. Reporting & Testing
+- 8. CI/CD Automation
+
 ## 1. Core Technologies
 
 | Category              | Technology                               | Role & Purpose                                                                                             |
