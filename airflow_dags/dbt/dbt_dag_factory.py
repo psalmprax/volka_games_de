@@ -94,7 +94,9 @@ def create_dbt_dag(dag_config: dict) -> DAG:
                 The value can be anything (e.g., `true`).
                 """
             )
+            # Link the approval task to the end of the current chain.
             chain_tail >> wait_for_approval
+            # Then, update the chain_tail to point to the new last task.
             chain_tail = wait_for_approval
         
         for task_config in dag_config['commands']:
