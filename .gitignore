@@ -1,3 +1,11 @@
+# Environment files
+# Ignore all .env files...
+.env
+.env.*
+# ...but DO NOT ignore the encrypted version or the example template.
+!/.env.encrypted
+!/.env.example
+
 # --- Python ---
 __pycache__/
 *.py[cod]
