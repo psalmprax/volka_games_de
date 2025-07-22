@@ -105,7 +105,8 @@ services:
     command:
       - bash
       - -c
-      - "echo '--- Airflow Worker Environment Variables ---' && env | grep 'DB_\\|AIRFLOW__' | sort && echo '------------------------------------------' && airflow celery worker"    
+      - "echo '--- Airflow Worker Environment Variables ---' && env | grep -E '^(DB_|AIRFLOW__)' | sort && echo '------------------------------------------' && airflow celery worker"
+      # - "echo '--- Airflow Worker Environment Variables ---' && env | grep 'DB_\\|AIRFLOW__' | sort && echo '------------------------------------------' && airflow celery worker"    
     # command: ["celery", "worker"]
     # You can scale workers using: docker-compose up --scale airflow-worker=3
     healthcheck:

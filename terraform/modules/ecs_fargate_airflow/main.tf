@@ -339,7 +339,7 @@ resource "aws_ecs_task_definition" "airflow_webserver" {
       name        = "airflow-webserver"
       image       = var.airflow_docker_image
       command     = ["webserver"]
-      portMappings = [{ containerPort = 8080 protocol = "tcp" }]
+      portMappings = [{ containerPort = 8080, protocol = "tcp" }]
       environment = local.common_airflow_environment
       secrets     = local.db_password_secret_config
       logConfiguration = {
@@ -357,7 +357,13 @@ resource "aws_ecs_task_definition" "airflow_webserver" {
       ]
     }
   ])
-  volumes = [local.efs_volume_configuration]
+  volume {
+    name = local.efs_volume_configuration.name
+    efs_volume_configuration {
+      file_system_id          = aws_efs_file_system.airflow_data.id
+      transit_encryption      = "ENABLED"
+    }
+  }
 }
 
 resource "aws_ecs_task_definition" "airflow_scheduler" {
@@ -392,7 +398,13 @@ resource "aws_ecs_task_definition" "airflow_scheduler" {
       ]
     }
   ])
-  volumes = [local.efs_volume_configuration]
+  volume {
+    name = local.efs_volume_configuration.name
+    efs_volume_configuration {
+      file_system_id          = aws_efs_file_system.airflow_data.id
+      transit_encryption      = "ENABLED"
+    }
+  }
 }
 
 resource "aws_ecs_task_definition" "airflow_worker" {
@@ -429,7 +441,13 @@ resource "aws_ecs_task_definition" "airflow_worker" {
       ]
     }
   ])
-  volumes = [local.efs_volume_configuration]
+  volume {
+    name = local.efs_volume_configuration.name
+    efs_volume_configuration {
+      file_system_id     = aws_efs_file_system.airflow_data.id
+      transit_encryption = "ENABLED"
+    }
+  }
 }
 
 resource "aws_ecs_service" "airflow_webserver" {

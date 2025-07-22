@@ -379,6 +379,7 @@ The project relies on environment variables for configuration, especially for da
 | `AWS_ACCESS_KEY_ID` | Your AWS access key for local development. | `XXXXXXXXXXXXXXXXXXXXXXX` |
 | `AWS_SECRET_ACCESS_KEY` | Your AWS secret key for local development. | `XXXXXXXXXXXXXXXXXXXXXXX` |
 | `DECRYPTION_KEY` | The password used to encrypt/decrypt the `.env` file. | `placeholder_for_real_password` |
+| `ETL_TARGET_PROCESSING_DATE` | **Optional**: Sets the end date for local script runs (`python etl/etl_script.py`). If unset, defaults to today. Not used by Airflow. | `2024-10-15` |
 
 
 ### 6.2. Local Development Setup

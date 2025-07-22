@@ -18,11 +18,11 @@ sudo chown -R 50000:0 ./airflow_dags ./etl ./dbt_project ./sql ./logs ./plugins 
 
 # Stop existing services if they are running.
 echo "Stopping existing Docker services (if any)..."
-sudo docker-compose down
+sudo docker compose down
 
 # Start all services, building images if they are out of date.
 echo "Starting services and building images if needed..."
-sudo docker-compose up --build -d
+sudo docker compose up --build -d
 
 # Wait for the webserver to be healthy before proceeding. This is more reliable than a fixed sleep.
 echo "Waiting for Airflow webserver to be healthy..."
@@ -33,7 +33,7 @@ done
 echo -e "\nAirflow webserver is healthy."
 
 # Find the Airflow worker container ID
-worker_container_id=$(sudo docker-compose ps -q airflow-worker)
+worker_container_id=$(sudo docker compose ps -q airflow-worker)
 
 if [ -z "$worker_container_id" ]; then
   echo "Error: Could not find the airflow-worker container. Please check docker-compose configuration."

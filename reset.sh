@@ -13,6 +13,6 @@ read -p "Are you sure you want to continue? (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "Performing full environment teardown..."
-    sudo docker-compose down -v --rmi local
+    sudo docker compose down -v --rmi local
     echo "Environment has been reset."
 fi
