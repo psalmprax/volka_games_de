@@ -1,5 +1,6 @@
 {{ config(
-    materialized='view'
+    materialized='view',
+    schema='reporting'
 ) }}
 
 with daily_data as (
@@ -8,7 +9,7 @@ with daily_data as (
 
 monthly_agg as (
     select
-        date_trunc('month', report_date)::date as report_month,
+        cast({{ dbt.date_trunc('month', 'report_date') }} as date) as report_month,
         campaign_name,
 
         -- Aggregate base metrics by summing up daily values

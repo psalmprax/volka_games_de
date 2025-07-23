@@ -413,6 +413,15 @@ After starting the services with `./start.sh`, follow these steps to execute a f
     # Query the final reporting model
     SELECT campaign_name, report_month, total_spend, roas_3d, cpi FROM public.monthly_campaign_summary ORDER BY report_month DESC, total_spend DESC LIMIT 10;
     ```
+
+#### Approving Manually Gated DAGs
+
+Some dbt DAGs, like `volka_dbt_staging_pipeline`, are configured to require manual approval before they run. This is a safety feature. To approve a run for the current day:
+1.  In the Airflow UI, go to **Admin -> Variables**.
+2.  Click the **+** button to add a new variable.
+3.  Set the **Key** to `approve_volka_dbt_staging_pipeline_YYYYMMDD` (e.g., `approve_volka_dbt_staging_pipeline_20241026`).
+4.  Set the **Value** to `true` and click **Save**. The waiting task will now proceed.
+    ```
 ### 6.3. AWS Deployment (Terraform)
 
 1.  **Prerequisites**: AWS Account, AWS CLI configured, Terraform.

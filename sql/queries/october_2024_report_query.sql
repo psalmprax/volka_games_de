@@ -15,7 +15,8 @@ SELECT
     total_payers_14d,
     total_revenue_14d
 FROM
-    public_reporting.monthly_campaign_summary
+    main_reporting.monthly_campaign_summary
+    --reporting.monthly_campaign_summary
 WHERE
     -- Filter for the specific month required for the report.
     -- The report_month column stores the first day of the month (e.g., '2024-10-01').

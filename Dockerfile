@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir \
 
 # Copy and install all other Python dependencies (including dbt) from a single requirements file.
 COPY etl/requirements.txt /requirements-etl.txt
-RUN pip install --no-cache-dir -r /requirements-etl.txt --constraint "${CONSTRAINT_URL}"
+RUN pip install --timeout 480 --no-cache-dir -r /requirements-etl.txt --constraint "${CONSTRAINT_URL}" -i https://pypi.org/simple
 
 # Set the Airflow home directory and add it to PYTHONPATH
 ENV AIRFLOW_HOME=/opt/airflow
@@ -38,6 +38,7 @@ COPY etl/ /opt/airflow/etl/
 COPY dbt_project /opt/airflow/dbt_project/
 COPY sql/ /opt/airflow/sql/
 COPY airflow_dags /opt/airflow/dags
+COPY scripts/ /opt/airflow/scripts/
 COPY xlsx_excel_report/ /opt/airflow/xlsx_excel_report
 COPY decrypt_env.sh /opt/airflow/decrypt_env.sh
 
@@ -47,8 +48,9 @@ EXPOSE 8080
 # Switch to root to set correct ownership for all copied project files.
 # This is crucial for environments where the container runs with a specific UID.
 USER root
-RUN chown -R ${AIRFLOW_UID}:${AIRFLOW_GID:-0} /opt/airflow/ && \
-    chmod +x /opt/airflow/decrypt_env.sh
+RUN chown -R 50000:0 /opt/airflow/ && \
+    chmod +x /opt/airflow/decrypt_env.sh && \
+    chmod +x /opt/airflow/scripts/*.sh
 
 # Switch back to the non-privileged airflow user to run the application
 USER airflow

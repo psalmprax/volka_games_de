@@ -77,5 +77,6 @@ select
 from performance
 left join dim_dates on performance.report_date = dim_dates.date_key -- Join on the date column, which serves as the key in this dimension.
 left join dim_campaigns on performance.campaign_name = dim_campaigns.campaign_name
--- Join to the ad dimension by regenerating the surrogate key. This is more robust than joining on natural keys.
-left join dim_ads on dim_ads.ad_key = {{ dbt_utils.generate_surrogate_key(['performance.campaign_name', 'performance.ad_name']) }}
+-- Join on natural keys to get the ad dimension's surrogate key. This is more performant
+-- than regenerating the key on the fly for every row in the fact table.
+left join dim_ads on performance.campaign_name = dim_ads.campaign_name and performance.ad_name = dim_ads.ad_name

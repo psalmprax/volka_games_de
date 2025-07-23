@@ -2,8 +2,9 @@ version: 2
 
 sources:
   # This defines the existing source from your Python ETL script.
-  - name: public
-    schema: public # or your raw data schema
+  - name: raw_data_source
+    # Use the 'main' schema for the DuckDB target, and 'public' for all others.
+    schema: "{{ 'main' if target.name == 'duckdb_iceberg' else 'public' }}"
     tables:
       - name: campaign_performance_raw_appends
         description: "Raw, append-only marketing performance data from the external API."

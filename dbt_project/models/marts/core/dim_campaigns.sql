@@ -20,7 +20,8 @@ with distinct_campaigns as (
 
 select
     -- Generate a surrogate key to serve as the primary key for the dimension.
-    {{ dbt_utils.generate_surrogate_key(['campaign_name']) }} as campaign_key,
+    -- Using MD5 for cross-database compatibility and to avoid macro resolution issues.
+    md5(cast(campaign_name as {{ dbt.type_string() }})) as campaign_key,
 
     -- The natural key of the dimension.
     campaign_name

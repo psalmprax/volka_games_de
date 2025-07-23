@@ -23,8 +23,10 @@ with source as (
 
 renamed_and_cleaned as (
     select
-        -- Generate a surrogate key for the staging model to be used in downstream facts
-        {{ dbt_utils.generate_surrogate_key(['campaigns_execution_date', 'campaign_name', 'ad_name']) }} as campaign_performance_sk,
+        -- Generate a surrogate key using a cross-database compatible MD5 hash.
+        -- This avoids potential macro resolution issues between dbt-core and adapters.
+        md5(cast(campaigns_execution_date as {{ dbt.type_string() }}) || '-' ||
+            cast(campaign_name as {{ dbt.type_string() }}) || '-' || cast(ad_name as {{ dbt.type_string() }})) as campaign_performance_sk,
 
         -- Identifiers and Dates
         campaigns_execution_date as report_date,

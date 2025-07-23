@@ -2,6 +2,8 @@ import os
 import requests
 import pandas as pd
 import psycopg2
+import awswrangler as wr
+import duckdb
 from psycopg2.extras import execute_values
 from datetime import date, timedelta, datetime
 import numpy as np
@@ -218,6 +220,73 @@ def transform_data(api_data: List[Dict[str, Any]]) -> pd.DataFrame:
     return df
 
 
+def append_data_to_iceberg(df: pd.DataFrame, table_name: str, lakehouse_params: dict):
+    """Appends data from a DataFrame to an Iceberg table using DuckDB.
+
+    This function provides a conceptual example of writing to a local Iceberg
+    table managed by DuckDB. A full production setup would typically use a
+    shared catalog like AWS Glue.
+
+    Args:
+        df: The DataFrame containing the data to load.
+        table_name: The name of the target Iceberg table.
+        lakehouse_params: A dictionary containing the path to the DuckDB file.
+    """
+    if df.empty:
+        logger.info("No data to load to Iceberg.")
+        return
+
+    db_file = lakehouse_params.get("duckdb_path")
+    if not db_file:
+        raise ValueError("duckdb_path not provided in lakehouse_params for Iceberg sink.")
+
+    # Add the load timestamp just before loading
+    df['_etl_loaded_at'] = datetime.utcnow()
+
+    try:
+        with duckdb.connect(db_file) as con:
+            # DuckDB can directly query pandas DataFrames registered as virtual tables.
+            con.register('df_to_load', df)
+
+            # Idempotent table creation: Create the table from the DataFrame schema if it doesn't exist.
+            # This makes the ETL script self-sufficient for the local lakehouse setup.
+            # The schema is inferred directly from the pandas DataFrame.
+            con.execute(f"CREATE TABLE IF NOT EXISTS {table_name} AS SELECT * FROM df_to_load LIMIT 0")
+
+            # Now, the INSERT operation will succeed.
+            con.execute(f"INSERT INTO {table_name} SELECT * FROM df_to_load")
+            appended_count = len(df)
+            logger.info(f"Appended {appended_count} new rows into Iceberg table {table_name}.")
+    except Exception as e:
+        logger.error(f"DuckDB/Iceberg error during append load: {e}")
+        raise
+
+
+def append_data_to_iceberg_glue(df: pd.DataFrame, table_name: str, lakehouse_params: dict):
+    """Appends data from a DataFrame to a Glue-cataloged Iceberg table on S3.
+
+    This function uses the awswrangler library, which is well-suited for this task
+    in a cloud environment. It handles writing Parquet files to S3 and updating
+    the Iceberg table metadata in the AWS Glue Data Catalog.
+
+    Args:
+        df: The DataFrame containing the data to load.
+        table_name: The name of the target Iceberg table.
+        lakehouse_params: A dictionary containing the S3 path and Glue database name.
+    """
+    if df.empty:
+        logger.info("No data to load to Iceberg on S3.")
+        return
+
+    s3_path = lakehouse_params.get("s3_path")
+    glue_database = lakehouse_params.get("glue_database")
+
+    # Add the load timestamp just before loading
+    df['_etl_loaded_at'] = datetime.utcnow()
+
+    wr.s3.to_iceberg(df=df, database=glue_database, table=table_name, s3_path=s3_path)
+    logger.info(f"Successfully wrote {len(df)} rows to Glue Iceberg table '{glue_database}.{table_name}'.")
+
 def append_data_to_postgres(df: pd.DataFrame, table_name: str, db_conn_params: dict):
     """Appends data from a DataFrame to a PostgreSQL table.
 
@@ -287,6 +356,27 @@ def get_last_loaded_date(db_conn_params: dict, table_name: str = TARGET_TABLE_NA
                 cursor.close()
             conn.close()
 
+def get_last_loaded_date_from_iceberg(lakehouse_params: dict, table_name: str = TARGET_TABLE_NAME) -> Optional[date]:
+    """Queries an Iceberg table via DuckDB to find the maximum execution date."""
+    db_file = lakehouse_params.get("duckdb_path")
+    if not db_file:
+        raise ValueError("duckdb_path not provided for get_last_loaded_date_from_iceberg.")
+
+    try:
+        with duckdb.connect(db_file, read_only=True) as con:
+            # Check if table exists first to prevent errors on initial load
+            tables = con.execute("SHOW TABLES;").fetchall()
+            if any(table_name in t for t in tables):
+                result = con.execute(f"SELECT MAX(campaigns_execution_date) FROM {table_name};").fetchone()
+                if result and result[0]:
+                    logger.info(f"Last loaded date in Iceberg table '{table_name}' is {result[0]}.")
+                    return result[0]
+            logger.info(f"No data found in Iceberg table '{table_name}'.")
+            return None
+    except Exception as e:
+        logger.warning(f"Could not query Iceberg table via DuckDB: {e}. Returning None.")
+        return None
+
 
 def _process_etl_chunk(api_key_header: dict, chunk_start_date_str: str, chunk_end_date_str: str, db_conn_params: dict) -> bool:
     """Processes a single ETL chunk: fetch, transform, and load.
@@ -305,6 +395,8 @@ def _process_etl_chunk(api_key_header: dict, chunk_start_date_str: str, chunk_en
     Raises:
         RuntimeError or psycopg2.Error on critical, unrecoverable failures during the load step.
     """
+    sink_type = os.getenv("ETL_SINK_TYPE", "postgres") # Default to postgres
+
     logger.info(f"Processing chunk: {chunk_start_date_str} to {chunk_end_date_str}")
 
     raw_data = fetch_data_from_api(api_key_header, chunk_start_date_str, chunk_end_date_str, lod='a')
@@ -321,17 +413,29 @@ def _process_etl_chunk(api_key_header: dict, chunk_start_date_str: str, chunk_en
         return True # No data to load is not an error
 
     logger.info(f"Transformed {len(transformed_df)} records for chunk.")
-    try:
-        append_data_to_postgres(transformed_df, TARGET_TABLE_NAME, db_conn_params)
-        logger.info(f"Successfully loaded data for chunk {chunk_start_date_str} to {chunk_end_date_str}.")
-        return True
-    except psycopg2.Error as db_err: # Catch specific DB errors for clear logging.
-        logger.error(f"Database error loading data for chunk {chunk_start_date_str} to {chunk_end_date_str}: {db_err}")
-        raise # Re-raise to ensure the ETL process acknowledges this critical failure
-    except Exception as e:
-        logger.error(f"Unexpected error loading data for chunk {chunk_start_date_str} to {chunk_end_date_str}: {e}")
-        # Re-raise as a runtime error to mark it as a critical failure for the ETL.
-        raise RuntimeError(f"Critical failure in chunk processing for {chunk_start_date_str}-{chunk_end_date_str}") from e
+    
+    if sink_type == "duckdb_iceberg":
+        try:
+            append_data_to_iceberg(transformed_df, TARGET_TABLE_NAME, db_conn_params)
+            logger.info(f"Successfully loaded data to Iceberg for chunk {chunk_start_date_str} to {chunk_end_date_str}.")
+            return True
+        except Exception as e:
+            logger.error(f"Unexpected error loading data to Iceberg for chunk {chunk_start_date_str} to {chunk_end_date_str}: {e}")
+            raise RuntimeError(f"Critical failure in Iceberg chunk processing for {chunk_start_date_str}-{chunk_end_date_str}") from e
+    elif sink_type == "redshift_iceberg":
+        try:
+            append_data_to_iceberg_glue(transformed_df, TARGET_TABLE_NAME, db_conn_params)
+        except Exception as e:
+            logger.error(f"Unexpected error loading data to Glue/S3 Iceberg for chunk {chunk_start_date_str} to {chunk_end_date_str}: {e}")
+            raise RuntimeError(f"Critical failure in Iceberg chunk processing for {chunk_start_date_str}-{chunk_end_date_str}") from e
+    else: # Default to postgres
+        try:
+            append_data_to_postgres(transformed_df, TARGET_TABLE_NAME, db_conn_params)
+            logger.info(f"Successfully loaded data to PostgreSQL for chunk {chunk_start_date_str} to {chunk_end_date_str}.")
+            return True
+        except Exception as e:
+            logger.error(f"Unexpected error loading data to PostgreSQL for chunk {chunk_start_date_str} to {chunk_end_date_str}: {e}")
+            raise RuntimeError(f"Critical failure in PostgreSQL chunk processing for {chunk_start_date_str}-{chunk_end_date_str}") from e
 
 
 def _perform_initial_load(api_key_header: dict, target_date: date, db_conn_params: dict):
@@ -429,23 +533,38 @@ def main_etl_flow(target_processing_date_str: str):
             logger.error(f"Failed to retrieve DB password from Secrets Manager '{db_password_secret_name}': {e}. Aborting ETL.")
             raise RuntimeError(f"ETL Aborted: Could not retrieve DB password.") from e
 
-    db_conn_params = {
-        "host": os.getenv("DB_HOST"),
-        "database": os.getenv("DB_NAME"),
-        "user": os.getenv("DB_USER"),
-        "password": db_password if db_password else os.getenv("DB_PASSWORD"), # Fallback to .env for local testing
-        "port": os.getenv("DB_PORT", "5432")
-    }
-    if not all(db_conn_params.get(k) for k in ["host", "database", "user"]):
-        logger.error("Database connection parameters (DB_HOST, DB_NAME, DB_USER) are not fully set. Aborting ETL.")
-        raise ValueError("ETL Aborted: Essential database connection parameters (DB_HOST, DB_NAME, DB_USER) are not set.")
+    sink_type = os.getenv("ETL_SINK_TYPE", "postgres")
+    conn_params = {}
+    last_date_in_db = None
 
-    last_date_in_db = get_last_loaded_date(db_conn_params)
+    if sink_type == "duckdb_iceberg":
+        logger.info("ETL sink is configured for Iceberg (via DuckDB).")
+        conn_params = {"duckdb_path": os.getenv("DBT_DUCKDB_PATH", "/opt/airflow/dwh/volka_lakehouse.duckdb")}
+        last_date_in_db = get_last_loaded_date_from_iceberg(conn_params)
+    elif sink_type == "redshift_iceberg":
+        logger.info("ETL sink is configured for Iceberg (via AWS Glue/S3).")
+        conn_params = {
+            "s3_path": os.getenv("ICEBERG_S3_PATH"),
+            "glue_database": os.getenv("ICEBERG_GLUE_DATABASE")
+        }
+        # Note: get_last_loaded_date would need a Redshift/Athena implementation. For now, we assume initial load.
+    else:
+        logger.info("ETL sink is configured for PostgreSQL.")
+        conn_params = {
+            "host": os.getenv("DB_HOST"),
+            "database": os.getenv("DB_NAME"),
+            "user": os.getenv("DB_USER"),
+            "password": db_password if db_password else os.getenv("DB_PASSWORD"),
+            "port": os.getenv("DB_PORT", "5432")
+        }
+        if not all(conn_params.get(k) for k in ["host", "database", "user"]):
+            raise ValueError("ETL Aborted: Essential PostgreSQL connection parameters are not set.")
+        last_date_in_db = get_last_loaded_date(conn_params)
 
     if last_date_in_db is None:
-        _perform_initial_load(api_key_header, target_date, db_conn_params)
+        _perform_initial_load(api_key_header, target_date, conn_params)
     else:
-        _perform_incremental_load(api_key_header, last_date_in_db, target_date, db_conn_params)
+        _perform_incremental_load(api_key_header, last_date_in_db, target_date, conn_params)
 
 
 if __name__ == "__main__":

@@ -26,11 +26,14 @@ campaigns as (
 
 select
     -- Generate a surrogate key for the ad, ensuring uniqueness by including the campaign name.
-    {{ dbt_utils.generate_surrogate_key(['ad_source.campaign_name', 'ad_source.ad_name']) }} as ad_key,
+    -- Using MD5 for cross-database compatibility and to avoid macro resolution issues.
+    md5(cast(ad_source.campaign_name as {{ dbt.type_string() }}) || '-' || cast(ad_source.ad_name as {{ dbt.type_string() }})) as ad_key,
     -- Foreign key to link back to the campaign dimension.
     campaigns.campaign_key as campaign_fk,
     -- Natural key of the dimension.
-    ad_source.ad_name
+    ad_source.ad_name,
+    -- Expose campaign_name for more efficient downstream joins from fact tables.
+    ad_source.campaign_name
     -- Placeholder for future ad-specific attributes (e.g., ad type, creative format).
 from ad_source
 left join campaigns on ad_source.campaign_name = campaigns.campaign_name

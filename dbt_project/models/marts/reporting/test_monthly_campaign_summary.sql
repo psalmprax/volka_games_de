@@ -6,14 +6,15 @@
 }}
 
 WITH daily_performance AS (
-    SELECT * FROM {{ source('public', 'campaign_performance_raw_appends') }}
+    SELECT * FROM {{ source('raw_data_source', 'campaign_performance_raw_appends') }}
     -- SELECT * from {{ ref('stg_campaign_performance') }}
 
 ),
 
 monthly_aggregated AS (
     SELECT
-        DATE_TRUNC('month', campaigns_execution_date)::DATE AS report_month,
+        -- Use dbt's cross-database macro for date truncation for better portability.
+        cast({{ dbt.date_trunc("month", "campaigns_execution_date") }} as date) as report_month,
         campaign_name,
         SUM(spend_cents) AS total_spend_cents,
         SUM(impressions) AS total_impressions,

@@ -17,6 +17,11 @@ x-airflow-common: &airflow-common
     # --- Celery Executor Configuration ---
     - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
     - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+    # --- Custom Pipeline Configuration ---
+    # Use these to switch between PostgreSQL and the Iceberg/DuckDB lakehouse.
+    - ETL_SINK_TYPE=iceberg # Options: 'postgres' or 'iceberg'
+    - DBT_TARGET_PROFILE=duckdb_iceberg # Options: 'dev' (for postgres) or 'duckdb_iceberg'
+    - DBT_DUCKDB_PATH=/opt/airflow/dwh/volka_lakehouse.duckdb
     # --- Secrets Backend (Optional but good practice, ensure provider is installed if used) --- db+postgresql
     # - AIRFLOW__SECRETS__BACKEND=airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
     # - AIRFLOW__SECRETS__BACKEND_KWARGS={"connections_prefix": "airflow/connections", "variables_prefix": "airflow/variables", "config_prefix": "airflow/config", "region_name": "eu-central-1"}
@@ -26,6 +31,7 @@ x-airflow-common: &airflow-common
     - ./dbt_project:/opt/airflow/dbt_project # Mount dbt project for live changes
     - ./sql:/opt/airflow/sql # Mount SQL files if needed
     - ./logs:/opt/airflow/logs # Persist logs
+    - ./dwh:/opt/airflow/dwh # Persist the DuckDB database file
     - ./plugins:/opt/airflow/plugins # Persist plugins
     - ./xlsx_excel_report:/opt/airflow/xlsx_excel_report # Persist report into xlxs_excel_output
   depends_on:

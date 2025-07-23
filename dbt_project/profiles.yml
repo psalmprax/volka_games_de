@@ -4,7 +4,8 @@
 # (e.g., local development vs. production).
 
 volka_marketing_analytics:
-  target: dev
+  # The target is controlled by the DBT_TARGET_PROFILE env var for consistency.
+  target: "{{ env_var('DBT_TARGET_PROFILE', 'duckdb_iceberg') }}"
   outputs:
     dev:
       type: postgres
@@ -22,3 +23,28 @@ volka_marketing_analytics:
       threads: 4
       # Uncomment the line below when connecting to a cloud database (e.g., AWS RDS) that requires SSL.
       # sslmode: prefer
+
+    duckdb_iceberg:
+      type: duckdb
+      # This path points to a file inside the container where the DuckDB database will be stored.
+      # This DB will manage the local Iceberg catalog.
+      path: "{{ env_var('DBT_DUCKDB_PATH', '/opt/airflow/dwh/volka_lakehouse.duckdb') }}"
+      # These extensions are crucial for Iceberg and S3 functionality.
+      extensions:
+        - httpfs
+        - iceberg
+      # DuckDB will automatically use AWS credentials from environment variables for S3 access.
+      threads: 4
+
+    redshift_iceberg:
+      type: redshift
+      method: iam
+      cluster_id: "{{ env_var('REDSHIFT_CLUSTER_ID') }}"
+      host: "{{ env_var('REDSHIFT_HOST') }}"
+      user: "{{ env_var('REDSHIFT_USER') }}"
+      port: "{{ env_var('REDSHIFT_PORT', 5439) | int }}"
+      db: "{{ env_var('REDSHIFT_DB') }}"
+      iam_role_arn: "{{ env_var('REDSHIFT_IAM_ROLE_ARN') }}"
+      # The schema where dbt will create its models.
+      schema: analytics
+      threads: 4

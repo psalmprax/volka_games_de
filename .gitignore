@@ -55,3 +55,7 @@ dbt_project/dbt_packages/
 # --- IDE / OS Specific ---
 .vscode/
 .idea/
+
+# DuckDB files
+*.duckdb
+*.duckdb.wal

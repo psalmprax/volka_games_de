@@ -11,16 +11,19 @@ based on the `check` strategy.
 analysis of how data may have been restated or corrected over time.
 #}
 
+{%- set unique_key_expr = "CONCAT(cast(campaigns_execution_date as " ~ dbt.type_string() ~ "), '-', campaign_name, '-', ad_name)" -%}
+
 {{
     config(
-      target_schema='public',
+      target_schema="main" if target.name == 'duckdb_iceberg' else "public",
       strategy='check',
-      unique_key="campaigns_execution_date::text || '-' || campaign_name || '-' || ad_name",
+      unique_key=unique_key_expr,
       check_cols='all',
       updated_at='_etl_loaded_at'
     )
 }}
 
-select * from {{ source('public', 'campaign_performance_raw_appends') }}
+select * from {{ source('raw_data_source', 'campaign_performance_raw_appends') }}
+
 
 {%- endsnapshot -%}

@@ -11,4 +11,7 @@ openpyxl
 # Version 1.8.2 is compatible with Airflow 2.9.2 constraints
 dbt-core==1.8.2
 dbt-postgres==1.8.2
+dbt-duckdb==1.8.2
+duckdb
+awswrangler[s3]
 # dbt-utils==1.1.1

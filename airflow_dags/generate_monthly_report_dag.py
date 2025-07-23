@@ -7,6 +7,8 @@ from airflow.exceptions import AirflowSkipException
 
 import glob
 import pandas as pd
+import os
+import duckdb
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.sensors.external_task import ExternalTaskSensor
@@ -102,8 +104,21 @@ def generate_monthly_report_dag():
         # Note: The SQL query itself can be templated (e.g., using {{ ds_nodash }})
         # if it needs to filter data dynamically based on the execution date.
 
-        df = pg_hook.get_pandas_df(sql=sql_query)
+        dbt_target = os.getenv("DBT_TARGET_PROFILE", "dev")
+        df = pd.DataFrame()
 
+        if dbt_target == 'duckdb_iceberg':
+            duckdb_path = os.getenv("DBT_DUCKDB_PATH", "/opt/airflow/dwh/volka_lakehouse.duckdb")
+            logging.info(f"Querying DuckDB lakehouse at {duckdb_path}")
+            try:
+                with duckdb.connect(duckdb_path, read_only=True) as con:
+                    df = con.execute(sql_query).fetchdf()
+            except Exception as e:
+                logging.error(f"Failed to query DuckDB: {e}")
+                raise
+        else: # Default to postgres
+            logging.info(f"Querying PostgreSQL warehouse using conn_id: {postgres_conn_id}")
+            df = pg_hook.get_pandas_df(sql=sql_query)
         if df.empty:
             logging.warning(f"Query from {report_base_name} returned no data. No Excel file will be generated.")
             return "No data found, report not generated."
